@@ -6,6 +6,7 @@ A GitHub CLI (`gh`) extension for automating NethServer 8 module release managem
 
 - [Features](#features)
 - [Installation](#installation)
+- [Shell Autocompletion](#shell-autocompletion)
 - [Usage](#usage)
   - [Commands](#commands)
   - [Options](#options)
@@ -33,6 +34,82 @@ A GitHub CLI (`gh`) extension for automating NethServer 8 module release managem
 
 ```bash
 gh extension install NethServer/gh-ns8
+```
+
+## Shell Autocompletion
+
+The extension includes built-in shell autocompletion support for Bash, Zsh, Fish, and PowerShell.
+
+### Bash
+
+**One-time setup** (add to `~/.bashrc` or `~/.bash_profile`):
+
+```bash
+# NethServer 8 extension completions
+eval "$(gh ns8 completion bash)"
+```
+
+Or install system-wide:
+
+```bash
+# Linux
+gh ns8 completion bash | sudo tee /etc/bash_completion.d/gh-ns8 > /dev/null
+
+# macOS (with Homebrew)
+gh ns8 completion bash > $(brew --prefix)/etc/bash_completion.d/gh-ns8
+```
+
+### Zsh
+
+**One-time setup** (add to `~/.zshrc`):
+
+```bash
+# NethServer 8 extension completions
+eval "$(gh ns8 completion zsh)"
+```
+
+Or install system-wide:
+
+```bash
+gh ns8 completion zsh > /usr/local/share/zsh/site-functions/_gh-ns8
+```
+
+Make sure you have the following in your `~/.zshrc`:
+
+```bash
+autoload -U compinit
+compinit
+```
+
+### Fish
+
+**One-time setup**:
+
+```bash
+gh ns8 completion fish > ~/.config/fish/completions/gh-ns8.fish
+```
+
+### PowerShell
+
+**One-time setup** (add to your PowerShell profile):
+
+```powershell
+gh ns8 completion powershell | Out-String | Invoke-Expression
+```
+
+To find your PowerShell profile location:
+
+```powershell
+$PROFILE
+```
+
+### Testing Autocompletion
+
+After installing, restart your shell or source your profile, then try:
+
+```bash
+gh ns8 module-release <TAB>         # Shows: create, check, comment, clean
+gh ns8 module-release create --<TAB>  # Shows available flags
 ```
 
 ## Usage

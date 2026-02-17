@@ -25,6 +25,12 @@ func init() {
 	moduleReleaseCmd.PersistentFlags().StringVar(&repoFlag, "repo", "", "The GitHub NethServer 8 module repository (e.g., owner/ns8-module)")
 	moduleReleaseCmd.PersistentFlags().StringVar(&issuesRepoFlag, "issues-repo", "NethServer/dev", "Issues repository (default: NethServer/dev)")
 
+	// Register custom completion for repo flag
+	moduleReleaseCmd.RegisterFlagCompletionFunc("repo", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Suggest format, but don't enforce autocomplete (user must type)
+		return []string{"owner/ns8-module"}, cobra.ShellCompDirectiveNoFileComp
+	})
+
 	// Add subcommands
 	moduleReleaseCmd.AddCommand(createCmd)
 	moduleReleaseCmd.AddCommand(checkCmd)
