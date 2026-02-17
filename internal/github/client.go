@@ -267,13 +267,36 @@ func (c *Client) GetIssue(repo string, number int) (*Issue, error) {
 	return &issue, nil
 }
 
-// CreateIssueComment posts a comment on an issue
-func (c *Client) CreateIssueComment(repo string, number int, body string) error {
+// CreateIssueComment posts a comment on an issue and returns the comment URL
+func (c *Client) CreateIssueComment(repo string, number int, body string) (string, error) {
 	_, _, err := gh.Exec("issue", "comment", fmt.Sprintf("%d", number), "--repo", repo, "--body", body)
 	if err != nil {
-		return fmt.Errorf("failed to create comment: %w", err)
+		return "", fmt.Errorf("failed to create comment: %w", err)
 	}
-	return nil
+
+	// Get the last comment to retrieve its URL
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid repo format: %s", repo)
+	}
+	owner, repoName := parts[0], parts[1]
+
+	type Comment struct {
+		ID  int    `json:"id"`
+		URL string `json:"html_url"`
+	}
+	var comments []Comment
+	err = c.rest.Get(fmt.Sprintf("repos/%s/%s/issues/%d/comments", owner, repoName, number), &comments)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch comment URL: %w", err)
+	}
+
+	if len(comments) == 0 {
+		return "", fmt.Errorf("no comments found after creation")
+	}
+
+	// Return the URL of the last comment (most recent)
+	return comments[len(comments)-1].URL, nil
 }
 
 // GetParentIssueNumber gets the parent issue using GraphQL sub-issues API

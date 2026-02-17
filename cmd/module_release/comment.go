@@ -101,12 +101,13 @@ func runComment(cmd *cobra.Command, args []string) error {
 		}
 
 		// Post comment on issue
-		if err := client.CreateIssueComment(issuesRepoFlag, issueNum, commentBody); err != nil {
+		commentURL, err := client.CreateIssueComment(issuesRepoFlag, issueNum, commentBody)
+		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to comment on issue %d: %v\n", issueNum, err)
 			continue
 		}
 
-		fmt.Printf("✅ Commented on issue %s#%d\n", issuesRepoFlag, issueNum)
+		fmt.Printf("✅ Commented on issue %s#%d\n   %s\n", issuesRepoFlag, issueNum, commentURL)
 		commentedCount++
 
 		// Check for parent issue and comment there too
@@ -115,10 +116,11 @@ func runComment(cmd *cobra.Command, args []string) error {
 			// Check if parent is open
 			parentIssue, err := client.GetIssue(issuesRepoFlag, parentNum)
 			if err == nil && parentIssue.State != "CLOSED" && parentIssue.State != "closed" {
-				if err := client.CreateIssueComment(issuesRepoFlag, parentNum, commentBody); err != nil {
+				parentCommentURL, err := client.CreateIssueComment(issuesRepoFlag, parentNum, commentBody)
+				if err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to comment on parent issue %d: %v\n", parentNum, err)
 				} else {
-					fmt.Printf("✅ Commented on parent issue %s#%d\n", issuesRepoFlag, parentNum)
+					fmt.Printf("✅ Commented on parent issue %s#%d\n   %s\n", issuesRepoFlag, parentNum, parentCommentURL)
 					commentedCount++
 				}
 			}
