@@ -10,9 +10,10 @@ import (
 
 // commentCmd represents the comment command
 var commentCmd = &cobra.Command{
-	Use:   "comment",
+	Use:   "comment [VERSION]",
 	Short: "Add comments to release issues",
 	Long:  `Post release notifications on open linked issues and their parent issues.`,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runComment,
 }
 
@@ -29,8 +30,12 @@ func runComment(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get release name (use latest if not provided)
-	releaseName := releaseNameFlag
+	// Get release name from argument or use latest
+	releaseName := ""
+	if len(args) > 0 {
+		releaseName = args[0]
+	}
+
 	if releaseName == "" {
 		release, err := module_release.GetLatestRelease(client, repo, false)
 		if err != nil {

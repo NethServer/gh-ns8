@@ -10,9 +10,10 @@ import (
 
 // cleanCmd represents the clean command
 var cleanCmd = &cobra.Command{
-	Use:   "clean",
+	Use:   "clean [VERSION]",
 	Short: "Remove pre-releases between stable releases",
 	Long:  `Delete all pre-release versions between two stable releases.`,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runClean,
 }
 
@@ -29,8 +30,12 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get stable release name (use latest stable if not provided)
-	stableRelease := releaseNameFlag
+	// Get stable release name from argument or use latest stable
+	stableRelease := ""
+	if len(args) > 0 {
+		stableRelease = args[0]
+	}
+
 	if stableRelease == "" {
 		release, err := module_release.GetLatestRelease(client, repo, true)
 		if err != nil {

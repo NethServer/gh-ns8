@@ -11,24 +11,23 @@ import (
 )
 
 var (
-	releaseRefsFlag       string
-	releaseNameFlag       string
-	testingFlag           bool
-	draftFlag             bool
-	withLinkedIssuesFlag  bool
+	releaseRefsFlag      string
+	testingFlag          bool
+	draftFlag            bool
+	withLinkedIssuesFlag bool
 )
 
 // createCmd represents the create command
 var createCmd = &cobra.Command{
-	Use:   "create",
+	Use:   "create [VERSION]",
 	Short: "Create a new release",
 	Long:  `Create a new release for a NethServer 8 module with automatic version generation and release notes.`,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runCreate,
 }
 
 func init() {
 	createCmd.Flags().StringVar(&releaseRefsFlag, "release-refs", "", "Commit SHA to associate with the release")
-	createCmd.Flags().StringVar(&releaseNameFlag, "release-name", "", "Specify the release name (must follow semver format)")
 	createCmd.Flags().BoolVar(&testingFlag, "testing", false, "Create a testing release")
 	createCmd.Flags().BoolVar(&draftFlag, "draft", false, "Create a draft release")
 	createCmd.Flags().BoolVar(&withLinkedIssuesFlag, "with-linked-issues", false, "Include linked issues from PRs in release notes")
@@ -53,25 +52,30 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Get release name from argument or auto-generate
+	releaseName := ""
+	if len(args) > 0 {
+		releaseName = args[0]
+	}
+
 	// Determine if this is a prerelease
-	isPrerelease := testingFlag || strings.Contains(releaseNameFlag, "-")
+	isPrerelease := testingFlag || strings.Contains(releaseName, "-")
 
 	// Generate release name if testing and not provided
-	if testingFlag && releaseNameFlag == "" {
-		releaseName, err := module_release.NextTestingRelease(client, repo)
+	if testingFlag && releaseName == "" {
+		releaseName, err = module_release.NextTestingRelease(client, repo)
 		if err != nil {
 			return fmt.Errorf("failed to generate testing release name: %w", err)
 		}
-		releaseNameFlag = releaseName
 	}
 
 	// Validate release name if provided
-	if releaseNameFlag == "" && !testingFlag {
-		return fmt.Errorf("please provide the release name using the --release-name flag")
+	if releaseName == "" && !testingFlag {
+		return fmt.Errorf("please provide the release name as an argument")
 	}
 
-	if releaseNameFlag != "" && !module_release.IsSemver(releaseNameFlag) {
-		return fmt.Errorf("invalid semver format for release name: %s", releaseNameFlag)
+	if releaseName != "" && !module_release.IsSemver(releaseName) {
+		return fmt.Errorf("invalid semver format for release name: %s", releaseName)
 	}
 
 	// Get previous release for release notes
@@ -101,11 +105,11 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	// Create the release
 	target := commitInfo.Target
-	if err := client.CreateRelease(repo, releaseNameFlag, releaseNameFlag, draftFlag, isPrerelease, target, notesReader); err != nil {
+	if err := client.CreateRelease(repo, releaseName, releaseName, draftFlag, isPrerelease, target, notesReader); err != nil {
 		return fmt.Errorf("failed to create release: %w", err)
 	}
 
-	fmt.Printf("✅ Release %s created successfully\n", releaseNameFlag)
+	fmt.Printf("✅ Release %s created successfully\n", releaseName)
 	return nil
 }
 
