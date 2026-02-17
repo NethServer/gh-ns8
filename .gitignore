@@ -1,0 +1,21 @@
+# Binaries
+gh-ns8
+gh-ns8-*
+*.exe
+dist/
+
+# Go
+vendor/
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
