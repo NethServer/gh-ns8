@@ -66,6 +66,37 @@ The client uses **three** methods for GitHub interaction — choose based on the
 
 All three live in `internal/github/client.go`. The `go-gh` library's `api.DefaultRESTClient()` handles auth automatically from `gh`'s stored credentials.
 
+## Git Commit Style
+
+All commits must follow these strict guidelines:
+
+- **Format**: Follow [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+- **50/72 Rule**: Subject line max 50 characters, body lines max 72 characters
+- **Tone**: Polite imperative mood, impersonal form, in English
+- **Subject**: Lowercase, imperative verb (e.g., "add", "fix", "refactor"), no period
+- **Body**: Explain *what* and *why*, not *how*. Separate from subject with a blank line.
+- **Type prefix**: Required for all commits
+  - `feat:` New feature
+  - `fix:` Bug fix
+  - `refactor:` Code refactoring
+  - `perf:` Performance improvement
+  - `docs:` Documentation changes
+  - `test:` Test additions or updates
+  - `chore:` Maintenance, build, or CI changes
+
+### Example
+
+```
+feat: add comment url to module-release output
+
+When creating issue comments via the comment subcommand,
+print the direct URL to the created comment for user
+convenience. Fetch comment details from GitHub API after
+creation to retrieve the html_url.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+```
+
 ## Key Conventions
 
 - **Repositories must match `owner/ns8-*`** — The `ValidateRepository` function enforces the NethServer 8 naming convention. This is intentional, not a bug.
