@@ -1,6 +1,6 @@
 module github.com/NethServer/gh-ns8
 
-go 1.25.7
+go 1.23
 
 require (
 	github.com/cli/go-gh/v2 v2.13.0
