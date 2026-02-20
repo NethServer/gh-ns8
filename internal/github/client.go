@@ -178,7 +178,7 @@ func (c *Client) CreateRelease(repo, tag, title string, draft, prerelease bool, 
 		args = append(args, "--notes-file", "-")
 	}
 
-	// For interactive operations with stdin, we need to use a different approach
+	// For operations with custom notes via stdin
 	if notesReader != nil {
 		// Read the notes into memory
 		notesBytes, err := io.ReadAll(notesReader)
@@ -186,16 +186,25 @@ func (c *Client) CreateRelease(repo, tag, title string, draft, prerelease bool, 
 			return fmt.Errorf("failed to read notes: %w", err)
 		}
 		
-		// Execute with notes as stdin (requires shell piping)
-		cmd := fmt.Sprintf("echo %q | gh %s", string(notesBytes), strings.Join(args, " "))
-		_, _, err = gh.Exec("sh", "-c", cmd)
+		// Use printf to avoid interpretation, pipe to gh command
+		notesStr := string(notesBytes)
+		shellCmd := fmt.Sprintf("printf '%%s' %q | gh %s", notesStr, strings.Join(args, " "))
+		stdout, stderr, err := gh.Exec("sh", "-c", shellCmd)
 		if err != nil {
-			return fmt.Errorf("failed to create release: %w", err)
+			errMsg := stderr.String()
+			if errMsg == "" {
+				errMsg = stdout.String()
+			}
+			return fmt.Errorf("failed to create release: gh execution failed: %s", strings.TrimSpace(errMsg))
 		}
 	} else {
-		_, _, err := gh.Exec(args...)
+		stdout, stderr, err := gh.Exec(args...)
 		if err != nil {
-			return fmt.Errorf("failed to create release: %w", err)
+			errMsg := stderr.String()
+			if errMsg == "" {
+				errMsg = stdout.String()
+			}
+			return fmt.Errorf("failed to create release: gh execution failed: %s", strings.TrimSpace(errMsg))
 		}
 	}
 
