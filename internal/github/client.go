@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/cli/go-gh/v2"
@@ -164,7 +165,7 @@ func (c *Client) ViewRelease(repo, tag string) (*Release, error) {
 // CreateRelease creates a new release using gh release create
 func (c *Client) CreateRelease(repo, tag, title string, draft, prerelease bool, target string, notesReader io.Reader) error {
 	args := []string{"release", "create", tag, "--repo", repo, "--title", title, "--generate-notes"}
-	
+
 	if draft {
 		args = append(args, "--draft")
 	}
@@ -174,38 +175,36 @@ func (c *Client) CreateRelease(repo, tag, title string, draft, prerelease bool, 
 	if target != "" {
 		args = append(args, "--target", target)
 	}
-	if notesReader != nil {
-		args = append(args, "--notes-file", "-")
-	}
 
-	// For operations with custom notes via stdin
+	// gh.Exec cannot pipe stdin; write notes to a temp file instead
 	if notesReader != nil {
-		// Read the notes into memory
 		notesBytes, err := io.ReadAll(notesReader)
 		if err != nil {
 			return fmt.Errorf("failed to read notes: %w", err)
 		}
-		
-		// Use printf to avoid interpretation, pipe to gh command
-		notesStr := string(notesBytes)
-		shellCmd := fmt.Sprintf("printf '%%s' %q | gh %s", notesStr, strings.Join(args, " "))
-		stdout, stderr, err := gh.Exec("sh", "-c", shellCmd)
+
+		tmpFile, err := os.CreateTemp("", "gh-ns8-release-notes-*.md")
 		if err != nil {
-			errMsg := stderr.String()
-			if errMsg == "" {
-				errMsg = stdout.String()
-			}
-			return fmt.Errorf("failed to create release: gh execution failed: %s", strings.TrimSpace(errMsg))
+			return fmt.Errorf("failed to create temp notes file: %w", err)
 		}
-	} else {
-		stdout, stderr, err := gh.Exec(args...)
-		if err != nil {
-			errMsg := stderr.String()
-			if errMsg == "" {
-				errMsg = stdout.String()
-			}
-			return fmt.Errorf("failed to create release: gh execution failed: %s", strings.TrimSpace(errMsg))
+		defer os.Remove(tmpFile.Name())
+
+		if _, err := tmpFile.Write(notesBytes); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("failed to write notes: %w", err)
 		}
+		tmpFile.Close()
+
+		args = append(args, "--notes-file", tmpFile.Name())
+	}
+
+	stdout, stderr, err := gh.Exec(args...)
+	if err != nil {
+		errMsg := stderr.String()
+		if errMsg == "" {
+			errMsg = stdout.String()
+		}
+		return fmt.Errorf("failed to create release: %s", strings.TrimSpace(errMsg))
 	}
 
 	return nil
