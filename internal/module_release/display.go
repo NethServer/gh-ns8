@@ -206,14 +206,8 @@ func (cs *CheckSummary) Display() {
 
 // displayIssue displays a single issue (and recursively its children)
 func (cs *CheckSummary) displayIssue(info *IssueInfo, indent int) {
-	prefix := strings.Repeat("  ", indent)
-	if indent > 0 {
-		prefix = "└─"
-	}
-
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("%-6s%s %s %-45s (%d) %s\n",
-		prefix,
+	fmt.Printf("  %s  %s  %-45s (%d) %s\n",
 		info.Status,
 		info.Progress,
 		issueURL,
@@ -231,8 +225,7 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo, indent int) {
 // displayChildIssue displays a child issue with proper indentation
 func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("%-2s%-2s %s %-45s (%d) %s\n",
-		"└─",
+	fmt.Printf("└─%s  %s  %-45s (%d) %s\n",
 		info.Status,
 		info.Progress,
 		issueURL,
