@@ -3,6 +3,7 @@ package module_release
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/NethServer/gh-ns8/internal/github"
@@ -95,7 +96,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Generate release notes with linked issues if requested
-	var notesReader *bytes.Buffer
+	var notesReader io.Reader
 	if withLinkedIssuesFlag && previousRelease != "" {
 		notes, err := generateLinkedIssuesNotes(client, repo, previousRelease, issuesRepoFlag)
 		if err == nil && notes != "" {
