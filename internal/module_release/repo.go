@@ -3,6 +3,7 @@ package module_release
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/NethServer/gh-ns8/internal/github"
@@ -152,6 +153,7 @@ func ScanForPRs(client *github.Client, repo, startRef, endRef string) ([]int, er
 	for prNum := range prMap {
 		prNumbers = append(prNumbers, prNum)
 	}
+	sort.Ints(prNumbers)
 
 	return prNumbers, nil
 }
@@ -164,28 +166,29 @@ func GetLinkedIssues(prBody, issuesRepo string) []int {
 	}
 	owner, repo := parts[0], parts[1]
 
-	// Build regex pattern to match:
-	// owner/issues/1234
-	// owner/repo#1234
-	// https://github.com/owner/repo/issues/1234
-	patterns := []string{
-		fmt.Sprintf(`%s/issues/(\d+)`, owner),
-		fmt.Sprintf(`%s/%s#(\d+)`, owner, repo),
-		fmt.Sprintf(`https://github\.com/%s/%s/issues/(\d+)`, owner, repo),
-	}
+	pattern := fmt.Sprintf(
+		`(?:%s/issues/(\d+))|(?:%s/%s#(\d+))|(?:https://github\.com/%s/%s/issues/(\d+))`,
+		regexp.QuoteMeta(owner),
+		regexp.QuoteMeta(owner),
+		regexp.QuoteMeta(repo),
+		regexp.QuoteMeta(owner),
+		regexp.QuoteMeta(repo),
+	)
 
-	var issueNumbers []int
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
-		matches := re.FindAllStringSubmatch(prBody, -1)
-		for _, match := range matches {
-			if len(match) > 1 {
-				var num int
-				fmt.Sscanf(match[1], "%d", &num)
-				if num > 0 {
-					issueNumbers = append(issueNumbers, num)
-				}
+	re := regexp.MustCompile(pattern)
+	matches := re.FindAllStringSubmatch(prBody, -1)
+	issueNumbers := make([]int, 0, len(matches))
+	for _, match := range matches {
+		for _, candidate := range match[1:] {
+			if candidate == "" {
+				continue
 			}
+			var num int
+			fmt.Sscanf(candidate, "%d", &num)
+			if num > 0 {
+				issueNumbers = append(issueNumbers, num)
+			}
+			break
 		}
 	}
 

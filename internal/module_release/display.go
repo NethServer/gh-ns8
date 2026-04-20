@@ -2,6 +2,7 @@ package module_release
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/NethServer/gh-ns8/internal/github"
@@ -44,6 +45,12 @@ type CheckSummary struct {
 	OrphanCommits  []string
 	Issues         map[int]*IssueInfo
 	IssuesRepo     string
+	issueOrder     []int
+}
+
+type issueProvider interface {
+	GetIssue(repo string, number int) (*github.Issue, error)
+	GetParentIssueNumber(repo string, issueNumber int) (int, error)
 }
 
 // NewCheckSummary creates a new CheckSummary
@@ -55,33 +62,60 @@ func NewCheckSummary(issuesRepo string) *CheckSummary {
 }
 
 // ProcessIssue processes an issue and adds it to the summary
-func (cs *CheckSummary) ProcessIssue(client *github.Client, issueNumber int) error {
+func (cs *CheckSummary) ProcessIssue(client issueProvider, issueNumber int) error {
 	// Check if already processed
 	if info, exists := cs.Issues[issueNumber]; exists {
 		info.RefCount++
 		return nil
 	}
 
-	// Get issue details
+	info, err := cs.loadIssueInfo(client, issueNumber, 1)
+	if err != nil {
+		return err
+	}
+
+	// Check for parent issue
+	parentNum, err := client.GetParentIssueNumber(cs.IssuesRepo, issueNumber)
+	if err == nil && parentNum > 0 {
+		parentInfo, exists := cs.Issues[parentNum]
+		if !exists {
+			parentInfo, err = cs.loadIssueInfo(client, parentNum, 0)
+			if err == nil {
+				cs.Issues[parentNum] = parentInfo
+				cs.rememberTopLevelIssue(parentNum)
+			}
+		}
+		if parentInfo != nil {
+			info.ParentNumber = parentNum
+			parentInfo.Children = append(parentInfo.Children, issueNumber)
+		} else {
+			cs.rememberTopLevelIssue(issueNumber)
+		}
+	} else {
+		cs.rememberTopLevelIssue(issueNumber)
+	}
+
+	cs.Issues[issueNumber] = info
+	return nil
+}
+
+func (cs *CheckSummary) loadIssueInfo(client issueProvider, issueNumber, refCount int) (*IssueInfo, error) {
 	issue, err := client.GetIssue(cs.IssuesRepo, issueNumber)
 	if err != nil {
-		return fmt.Errorf("failed to get issue %d: %w", issueNumber, err)
+		return nil, fmt.Errorf("failed to get issue %d: %w", issueNumber, err)
 	}
 
-	// Create issue info
 	info := &IssueInfo{
 		Number:   issueNumber,
-		RefCount: 1,
+		RefCount: refCount,
 	}
 
-	// Set status
 	if issue.State == "CLOSED" || issue.State == "closed" {
 		info.Status = EmojiClosedIssue
 	} else {
 		info.Status = EmojiOpenIssue
 	}
 
-	// Extract labels and progress
 	var labelNames []string
 	hasVerified := false
 	hasTesting := false
@@ -98,33 +132,125 @@ func (cs *CheckSummary) ProcessIssue(client *github.Client, issueNumber int) err
 
 	info.Labels = strings.Join(labelNames, " ")
 
-	// Set progress status
-	if hasVerified {
+	switch {
+	case hasVerified:
 		info.Progress = EmojiVerified
-	} else if hasTesting {
+	case hasTesting:
 		info.Progress = EmojiTesting
-	} else {
+	default:
 		info.Progress = EmojiInProgress
 	}
 
-	// Check for parent issue
-	parentNum, err := client.GetParentIssueNumber(cs.IssuesRepo, issueNumber)
-	if err == nil && parentNum > 0 {
-		info.ParentNumber = parentNum
-		// Recursively process parent if not already processed
-		if _, exists := cs.Issues[parentNum]; !exists {
-			if err := cs.ProcessIssue(client, parentNum); err == nil {
-				// Add this issue as a child of parent
-				cs.Issues[parentNum].Children = append(cs.Issues[parentNum].Children, issueNumber)
-			}
-		} else {
-			// Parent already exists, just add as child
-			cs.Issues[parentNum].Children = append(cs.Issues[parentNum].Children, issueNumber)
+	return info, nil
+}
+
+func (cs *CheckSummary) rememberTopLevelIssue(issueNumber int) {
+	for _, current := range cs.issueOrder {
+		if current == issueNumber {
+			return
+		}
+	}
+	cs.issueOrder = append(cs.issueOrder, issueNumber)
+}
+
+func (cs *CheckSummary) orderedTopLevelIssues() []*IssueInfo {
+	topLevel := make([]int, 0, len(cs.issueOrder))
+	seen := make(map[int]bool, len(cs.issueOrder))
+	for _, issueNumber := range cs.issueOrder {
+		info, exists := cs.Issues[issueNumber]
+		if !exists || info.ParentNumber != 0 || seen[issueNumber] {
+			continue
+		}
+		topLevel = append(topLevel, issueNumber)
+		seen[issueNumber] = true
+	}
+
+	for issueNumber, info := range cs.Issues {
+		if info.ParentNumber == 0 && !seen[issueNumber] {
+			topLevel = append(topLevel, issueNumber)
 		}
 	}
 
-	cs.Issues[issueNumber] = info
-	return nil
+	ordered := make([]*IssueInfo, 0, len(topLevel))
+	for _, issueNumber := range bashAssocKeyOrder(topLevel) {
+		if info, exists := cs.Issues[issueNumber]; exists {
+			ordered = append(ordered, info)
+		}
+	}
+
+	return ordered
+}
+
+func bashAssocKeyOrder(keys []int) []int {
+	table := newBashHashTable()
+	for _, key := range keys {
+		table.insert(key)
+	}
+	return table.keys()
+}
+
+type bashHashEntry struct {
+	key  int
+	hash uint32
+}
+
+type bashHashTable struct {
+	buckets  [][]bashHashEntry
+	nentries int
+}
+
+func newBashHashTable() *bashHashTable {
+	return &bashHashTable{
+		buckets: make([][]bashHashEntry, 1024),
+	}
+}
+
+func (t *bashHashTable) insert(key int) {
+	if t.nentries >= len(t.buckets)*2 {
+		t.rehash(len(t.buckets) * 4)
+	}
+
+	hash := bashHashString(strconv.Itoa(key))
+	bucket := int(hash & uint32(len(t.buckets)-1))
+
+	for _, entry := range t.buckets[bucket] {
+		if entry.key == key {
+			return
+		}
+	}
+
+	t.buckets[bucket] = append([]bashHashEntry{{key: key, hash: hash}}, t.buckets[bucket]...)
+	t.nentries++
+}
+
+func (t *bashHashTable) rehash(size int) {
+	buckets := make([][]bashHashEntry, size)
+	for _, bucketEntries := range t.buckets {
+		for _, entry := range bucketEntries {
+			bucket := int(entry.hash & uint32(size-1))
+			buckets[bucket] = append([]bashHashEntry{entry}, buckets[bucket]...)
+		}
+	}
+	t.buckets = buckets
+}
+
+func (t *bashHashTable) keys() []int {
+	keys := make([]int, 0, t.nentries)
+	for _, bucketEntries := range t.buckets {
+		for _, entry := range bucketEntries {
+			keys = append(keys, entry.key)
+		}
+	}
+	return keys
+}
+
+func bashHashString(key string) uint32 {
+	var hash uint32 = 2166136261
+	for i := 0; i < len(key); i++ {
+		hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24)
+		hash ^= uint32(key[i])
+	}
+	return hash
 }
 
 // Display prints the check summary
@@ -162,18 +288,8 @@ func (cs *CheckSummary) Display() {
 	// Issues
 	fmt.Printf("%sIssues:%s\n", ColorBold, ColorReset)
 
-	// Display parent issues with children first
-	for _, info := range cs.Issues {
-		if info.ParentNumber == 0 && len(info.Children) > 0 {
-			cs.displayIssue(info, 0)
-		}
-	}
-
-	// Display standalone issues (no parent, no children)
-	for _, info := range cs.Issues {
-		if info.ParentNumber == 0 && len(info.Children) == 0 {
-			cs.displayIssue(info, 0)
-		}
+	for _, info := range cs.orderedTopLevelIssues() {
+		cs.displayIssue(info)
 	}
 
 	// Check if all verified
@@ -204,10 +320,10 @@ func (cs *CheckSummary) Display() {
 	fmt.Printf("Progress status: %s In Progress    %s Testing    %s Verified\n", EmojiInProgress, EmojiTesting, EmojiVerified)
 }
 
-// displayIssue displays a single issue (and recursively its children)
-func (cs *CheckSummary) displayIssue(info *IssueInfo, indent int) {
+// displayIssue displays a single top-level issue and its direct children.
+func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("  %s  %s  %-45s (%d) %s\n",
+	fmt.Printf("%s   %s %s (%d) %s\n",
 		info.Status,
 		info.Progress,
 		issueURL,
@@ -225,7 +341,7 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo, indent int) {
 // displayChildIssue displays a child issue with proper indentation
 func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("└─%s  %s  %-45s (%d) %s\n",
+	fmt.Printf("└─%s %s %s (%d) %s\n",
 		info.Status,
 		info.Progress,
 		issueURL,
