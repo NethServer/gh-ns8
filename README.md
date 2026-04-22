@@ -446,6 +446,7 @@ The project uses the `gh-extension-precompile` GitHub Action for automated cross
 2. The GitHub Action will automatically:
    - Build binaries for multiple platforms
    - Attach them to the GitHub release
+   - Generate and upload a CycloneDX SBOM asset (`sbom.cdx.json`)
    - Name them according to `gh` extension conventions
 
 ## Prerequisites
