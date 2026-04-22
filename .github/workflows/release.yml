@@ -3,6 +3,7 @@ on:
   push:
     tags:
       - "v*"
+
 permissions:
   contents: write
 
@@ -12,3 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: cli/gh-extension-precompile@v2
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: "fs"
+          format: "cyclonedx"
+          output: "sbom.cdx.json"
+      - name: Upload SBOM to release
+        uses: softprops/action-gh-release@v3.0.0
+        with:
+          files: sbom.cdx.json
+          tag_name: ${{ github.ref_name }}
