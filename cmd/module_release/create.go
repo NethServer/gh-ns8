@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/NethServer/gh-ns8/internal/github"
@@ -17,6 +18,18 @@ var (
 	draftFlag            bool
 	withLinkedIssuesFlag bool
 )
+
+type linkedIssuesNotesClient interface {
+	CompareCommits(repo, base, head string) (*github.CompareResult, error)
+	GetPullRequestsForCommit(repo, sha string) ([]int, error)
+	GetPullRequest(repo string, number int) (*github.PullRequest, error)
+	GetIssue(repo string, number int) (*github.Issue, error)
+}
+
+type createReleaseFlowClient interface {
+	ListReleases(repo string, limit int, excludePreReleases bool) ([]github.Release, error)
+	GetCommitSHA(repo, ref string) (string, error)
+}
 
 // createCmd represents the create command
 var createCmd = &cobra.Command{
@@ -53,56 +66,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get release name from argument or auto-generate
-	releaseName := ""
-	if len(args) > 0 {
-		releaseName = args[0]
+	releaseName, isPrerelease, err := resolveCreateReleaseName(client, repo, args, testingFlag)
+	if err != nil {
+		return err
 	}
 
-	// Determine if this is a prerelease
-	isPrerelease := testingFlag || strings.Contains(releaseName, "-")
-
-	// Generate release name if testing and not provided
-	if testingFlag && releaseName == "" {
-		releaseName, err = module_release.NextTestingRelease(client, repo)
-		if err != nil {
-			return fmt.Errorf("failed to generate testing release name: %w", err)
-		}
-	}
-
-	// Validate release name if provided
-	if releaseName == "" && !testingFlag {
-		return fmt.Errorf("please provide the release name as an argument")
-	}
-
-	if releaseName != "" && !module_release.IsSemver(releaseName) {
-		return fmt.Errorf("invalid semver format for release name: %s", releaseName)
-	}
-
-	// Get previous release for release notes
-	var previousRelease string
-	if isPrerelease {
-		// Get latest release (any type)
-		release, err := module_release.GetLatestRelease(client, repo, false)
-		if err == nil {
-			previousRelease = release.TagName
-		}
-	} else {
-		// Get latest stable release
-		release, err := module_release.GetLatestRelease(client, repo, true)
-		if err == nil {
-			previousRelease = release.TagName
-		}
-	}
-
-	// Generate release notes with linked issues if requested
-	var notesReader io.Reader
-	if withLinkedIssuesFlag && previousRelease != "" {
-		notes, err := generateLinkedIssuesNotes(client, repo, previousRelease, issuesRepoFlag)
-		if err == nil && notes != "" {
-			notesReader = bytes.NewBufferString(notes)
-		}
-	}
+	previousRelease := previousReleaseForCreate(client, repo, isPrerelease)
+	notesReader := linkedIssuesNotesReader(client, repo, previousRelease, issuesRepoFlag, withLinkedIssuesFlag)
 
 	// Create the release
 	target := commitInfo.Target
@@ -114,8 +84,57 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func resolveCreateReleaseName(client createReleaseFlowClient, repo string, args []string, testing bool) (string, bool, error) {
+	releaseName := ""
+	if len(args) > 0 {
+		releaseName = args[0]
+	}
+
+	isPrerelease := testing || strings.Contains(releaseName, "-")
+
+	if testing && releaseName == "" {
+		nextRelease, err := module_release.NextTestingRelease(client, repo)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to generate testing release name: %w", err)
+		}
+		releaseName = nextRelease
+	}
+
+	if releaseName == "" && !testing {
+		return "", false, fmt.Errorf("please provide the release name as an argument")
+	}
+
+	if releaseName != "" && !module_release.IsSemver(releaseName) {
+		return "", false, fmt.Errorf("invalid semver format for release name: %s", releaseName)
+	}
+
+	return releaseName, isPrerelease, nil
+}
+
+func previousReleaseForCreate(client createReleaseFlowClient, repo string, isPrerelease bool) string {
+	release, err := module_release.GetLatestRelease(client, repo, !isPrerelease)
+	if err != nil {
+		return ""
+	}
+
+	return release.TagName
+}
+
+func linkedIssuesNotesReader(client linkedIssuesNotesClient, repo, previousRelease, issuesRepo string, include bool) io.Reader {
+	if !include || previousRelease == "" {
+		return nil
+	}
+
+	notes, err := generateLinkedIssuesNotes(client, repo, previousRelease, issuesRepo)
+	if err != nil || notes == "" {
+		return nil
+	}
+
+	return bytes.NewBufferString(notes)
+}
+
 // generateLinkedIssuesNotes generates release notes with linked issues
-func generateLinkedIssuesNotes(client *github.Client, repo, previousRelease, issuesRepo string) (string, error) {
+func generateLinkedIssuesNotes(client linkedIssuesNotesClient, repo, previousRelease, issuesRepo string) (string, error) {
 	// Scan for PRs
 	prNumbers, err := module_release.ScanForPRs(client, repo, previousRelease, "main")
 	if err != nil {
@@ -149,7 +168,13 @@ func generateLinkedIssuesNotes(client *github.Client, repo, previousRelease, iss
 	// Format notes
 	var notes strings.Builder
 	notes.WriteString("## Linked Issues\n")
-	for issueNum, title := range issueMap {
+	issueNumbers := make([]int, 0, len(issueMap))
+	for issueNum := range issueMap {
+		issueNumbers = append(issueNumbers, issueNum)
+	}
+	sort.Ints(issueNumbers)
+	for _, issueNum := range issueNumbers {
+		title := issueMap[issueNum]
 		notes.WriteString(fmt.Sprintf("- [%s#%d](https://github.com/%s/issues/%d): %s\n",
 			issuesRepo, issueNum, issuesRepo, issueNum, title))
 	}

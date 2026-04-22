@@ -11,8 +11,33 @@ import (
 
 var ns8ModulePattern = regexp.MustCompile(`^[^/]+/ns8-`)
 
+var getCurrentRepository = github.GetCurrentRepository
+
+type repositoryClient interface {
+	GetRepository(repo string) (*github.Repository, error)
+}
+
+type commitClient interface {
+	GetLatestCommit(repo string) (string, error)
+	GetRepository(repo string) (*github.Repository, error)
+	GetMergeBase(repo, base, head string) (string, error)
+}
+
+type releaseClient interface {
+	ListReleases(repo string, limit int, excludePreReleases bool) ([]github.Release, error)
+}
+
+type refClient interface {
+	GetCommitSHA(repo, ref string) (string, error)
+}
+
+type compareClient interface {
+	CompareCommits(repo, base, head string) (*github.CompareResult, error)
+	GetPullRequestsForCommit(repo, sha string) ([]int, error)
+}
+
 // ValidateRepository checks if the repository exists and follows NS8 naming convention
-func ValidateRepository(client *github.Client, repo string) error {
+func ValidateRepository(client repositoryClient, repo string) error {
 	// Check if repo matches the ns8-* pattern
 	if !ns8ModulePattern.MatchString(repo) {
 		return fmt.Errorf("invalid NS8 module name: %s (must match owner/ns8-*)", repo)
@@ -28,10 +53,10 @@ func ValidateRepository(client *github.Client, repo string) error {
 }
 
 // GetOrValidateRepo returns the provided repo or gets the current directory's repo
-func GetOrValidateRepo(client *github.Client, repo string) (string, error) {
+func GetOrValidateRepo(client repositoryClient, repo string) (string, error) {
 	// If repo is not provided, get it from current directory
 	if repo == "" {
-		currentRepo, err := github.GetCurrentRepository()
+		currentRepo, err := getCurrentRepository()
 		if err != nil {
 			return "", fmt.Errorf("could not determine the repo. Please provide the repo name using the --repo flag")
 		}
@@ -53,7 +78,7 @@ type CommitInfo struct {
 }
 
 // GetOrValidateCommit returns the latest commit or validates the provided one
-func GetOrValidateCommit(client *github.Client, repo, commitSHA string) (*CommitInfo, error) {
+func GetOrValidateCommit(client commitClient, repo, commitSHA string) (*CommitInfo, error) {
 	info := &CommitInfo{}
 
 	// If no commit SHA provided, get the latest
@@ -89,7 +114,7 @@ func GetOrValidateCommit(client *github.Client, repo, commitSHA string) (*Commit
 }
 
 // GetLatestRelease gets the latest release (optionally excluding pre-releases)
-func GetLatestRelease(client *github.Client, repo string, excludePreReleases bool) (*github.Release, error) {
+func GetLatestRelease(client releaseClient, repo string, excludePreReleases bool) (*github.Release, error) {
 	releases, err := client.ListReleases(repo, 1, excludePreReleases)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases: %w", err)
@@ -103,7 +128,7 @@ func GetLatestRelease(client *github.Client, repo string, excludePreReleases boo
 }
 
 // GetReleaseCommitSHA gets the commit SHA for a release tag
-func GetReleaseCommitSHA(client *github.Client, repo, tag string) (string, error) {
+func GetReleaseCommitSHA(client refClient, repo, tag string) (string, error) {
 	sha, err := client.GetCommitSHA(repo, fmt.Sprintf("tags/%s", tag))
 	if err != nil {
 		return "", fmt.Errorf("failed to get commit SHA for tag %s: %w", tag, err)
@@ -112,7 +137,7 @@ func GetReleaseCommitSHA(client *github.Client, repo, tag string) (string, error
 }
 
 // GetMainBranchSHA gets the current SHA of the main branch
-func GetMainBranchSHA(client *github.Client, repo string) (string, error) {
+func GetMainBranchSHA(client refClient, repo string) (string, error) {
 	sha, err := client.GetCommitSHA(repo, "heads/main")
 	if err != nil {
 		return "", fmt.Errorf("failed to get main branch SHA: %w", err)
@@ -121,7 +146,7 @@ func GetMainBranchSHA(client *github.Client, repo string) (string, error) {
 }
 
 // ScanForPRs scans commits between two refs and returns unique PR numbers
-func ScanForPRs(client *github.Client, repo, startRef, endRef string) ([]int, error) {
+func ScanForPRs(client compareClient, repo, startRef, endRef string) ([]int, error) {
 	// Compare commits
 	comparison, err := client.CompareCommits(repo, startRef, endRef)
 	if err != nil {

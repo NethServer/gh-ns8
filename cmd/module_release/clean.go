@@ -2,6 +2,7 @@ package module_release
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/NethServer/gh-ns8/internal/github"
 	"github.com/NethServer/gh-ns8/internal/module_release"
@@ -17,6 +18,14 @@ var cleanCmd = &cobra.Command{
 	RunE:  runClean,
 }
 
+type cleanReleaseLookupClient interface {
+	ListReleases(repo string, limit int, excludePreReleases bool) ([]github.Release, error)
+}
+
+type releaseDeleter interface {
+	DeleteRelease(repo, tag string) error
+}
+
 func runClean(cmd *cobra.Command, args []string) error {
 	// Create GitHub client
 	client, err := github.NewClient()
@@ -30,18 +39,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get stable release name from argument or use latest stable
-	stableRelease := ""
-	if len(args) > 0 {
-		stableRelease = args[0]
-	}
-
-	if stableRelease == "" {
-		release, err := module_release.GetLatestRelease(client, repo, true)
-		if err != nil {
-			return fmt.Errorf("no stable release found in the repository")
-		}
-		stableRelease = release.TagName
+	stableRelease, err := resolveStableRelease(client, repo, args)
+	if err != nil {
+		return err
 	}
 
 	// Find previous stable release
@@ -56,29 +56,51 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get pre-releases: %w", err)
 	}
 
+	deletePreReleases(cmd.OutOrStdout(), client, repo, previousRelease, stableRelease, preReleases)
+	return nil
+}
+
+func resolveStableRelease(client cleanReleaseLookupClient, repo string, args []string) (string, error) {
+	stableRelease := ""
+	if len(args) > 0 {
+		stableRelease = args[0]
+	}
+
+	if stableRelease != "" {
+		return stableRelease, nil
+	}
+
+	release, err := module_release.GetLatestRelease(client, repo, true)
+	if err != nil {
+		return "", fmt.Errorf("no stable release found in the repository")
+	}
+
+	return release.TagName, nil
+}
+
+func deletePreReleases(out io.Writer, client releaseDeleter, repo, previousRelease, stableRelease string, preReleases []string) int {
 	if len(preReleases) == 0 {
-		fmt.Printf("No pre-releases found between %s and %s\n", previousRelease, stableRelease)
-		return nil
+		fmt.Fprintf(out, "No pre-releases found between %s and %s\n", previousRelease, stableRelease)
+		return 0
 	}
 
-	fmt.Printf("Found %d pre-release(s) to delete between %s and %s:\n", len(preReleases), previousRelease, stableRelease)
+	fmt.Fprintf(out, "Found %d pre-release(s) to delete between %s and %s:\n", len(preReleases), previousRelease, stableRelease)
 	for _, tag := range preReleases {
-		fmt.Printf("  - %s\n", tag)
+		fmt.Fprintf(out, "  - %s\n", tag)
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 
-	// Delete each pre-release
 	deletedCount := 0
 	for _, tag := range preReleases {
-		fmt.Printf("Deleting %s... ", tag)
+		fmt.Fprintf(out, "Deleting %s... ", tag)
 		if err := client.DeleteRelease(repo, tag); err != nil {
-			fmt.Printf("❌ Failed: %v\n", err)
+			fmt.Fprintf(out, "❌ Failed: %v\n", err)
 			continue
 		}
-		fmt.Println("✅")
+		fmt.Fprintln(out, "✅")
 		deletedCount++
 	}
 
-	fmt.Printf("\n✅ Deleted %d pre-release(s) successfully\n", deletedCount)
-	return nil
+	fmt.Fprintf(out, "\n✅ Deleted %d pre-release(s) successfully\n", deletedCount)
+	return deletedCount
 }

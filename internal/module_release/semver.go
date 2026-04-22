@@ -12,13 +12,27 @@ import (
 // Official semver regex from semver.org
 var semverRegex = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$`)
 
+type releaseViewer interface {
+	ViewRelease(repo, tag string) (*github.Release, error)
+}
+
+type releaseSequenceClient interface {
+	releaseClient
+	refClient
+}
+
+type releaseHistoryClient interface {
+	releaseClient
+	releaseViewer
+}
+
 // IsSemver checks if a string is valid semver format
 func IsSemver(version string) bool {
 	return semverRegex.MatchString(version)
 }
 
 // NextTestingRelease generates the next testing release name
-func NextTestingRelease(client *github.Client, repo string) (string, error) {
+func NextTestingRelease(client releaseSequenceClient, repo string) (string, error) {
 	// Get the latest release (including pre-releases)
 	releases, err := client.ListReleases(repo, 1, false)
 	if err != nil {
@@ -99,7 +113,7 @@ func incrementPatchAndAddTesting(version string) (string, error) {
 }
 
 // FindPreviousRelease finds the previous release based on creation date
-func FindPreviousRelease(client *github.Client, repo, currentTag string) (string, error) {
+func FindPreviousRelease(client releaseHistoryClient, repo, currentTag string) (string, error) {
 	// Check if current release is a pre-release
 	currentRelease, err := client.ViewRelease(repo, currentTag)
 	if err != nil {
@@ -145,7 +159,7 @@ func FindPreviousRelease(client *github.Client, repo, currentTag string) (string
 }
 
 // GetPreReleasesBetween gets pre-releases between two releases
-func GetPreReleasesBetween(client *github.Client, repo, startTag, endTag string) ([]string, error) {
+func GetPreReleasesBetween(client releaseClient, repo, startTag, endTag string) ([]string, error) {
 	allReleases, err := client.ListReleases(repo, 1000, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases: %w", err)

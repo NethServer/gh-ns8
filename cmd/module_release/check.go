@@ -2,6 +2,7 @@ package module_release
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/NethServer/gh-ns8/internal/github"
 	"github.com/NethServer/gh-ns8/internal/module_release"
@@ -14,6 +15,13 @@ var checkCmd = &cobra.Command{
 	Short: "Check the status of the main branch",
 	Long:  `Check for PRs and issues since the latest release and verify readiness for a new release.`,
 	RunE:  runCheck,
+}
+
+type checkSummaryClient interface {
+	GetPullRequestsForCommit(repo, sha string) ([]int, error)
+	GetPullRequest(repo string, number int) (*github.PullRequest, error)
+	GetIssue(repo string, number int) (*github.Issue, error)
+	GetParentIssueNumber(repo string, issueNumber int) (int, error)
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
@@ -67,16 +75,22 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Track commits that are in PRs
-	commitsInPRs := make(map[string]bool)
-
 	// Scan for PRs
 	prNumbers, err := module_release.ScanForPRs(client, repo, latestRelease.TagName, "main")
 	if err != nil {
 		return fmt.Errorf("error processing PRs: %w", err)
 	}
 
-	// Mark all commits that belong to PRs
+	populateCheckSummary(cmd.ErrOrStderr(), client, summary, repo, comparison, prNumbers)
+
+	// Display summary
+	summary.Display()
+
+	return nil
+}
+
+func populateCheckSummary(errWriter io.Writer, client checkSummaryClient, summary *module_release.CheckSummary, repo string, comparison *github.CompareResult, prNumbers []int) {
+	commitsInPRs := make(map[string]bool)
 	for _, commit := range comparison.Commits {
 		prs, err := client.GetPullRequestsForCommit(repo, commit.SHA)
 		if err == nil && len(prs) > 0 {
@@ -84,53 +98,42 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Process each PR
 	for _, prNum := range prNumbers {
 		pr, err := client.GetPullRequest(repo, prNum)
 		if err != nil {
 			continue
 		}
 
-		// Check for linked issues
-		linkedIssues := module_release.GetLinkedIssues(pr.Body, issuesRepoFlag)
-		
+		linkedIssues := module_release.GetLinkedIssues(pr.Body, summary.IssuesRepo)
 		if len(linkedIssues) > 0 {
-			// Process linked issues
 			for _, issueNum := range linkedIssues {
 				if err := summary.ProcessIssue(client, issueNum); err != nil {
-					// Log error but continue
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to process issue %d: %v\n", issueNum, err)
+					fmt.Fprintf(errWriter, "Warning: failed to process issue %d: %v\n", issueNum, err)
 				}
 			}
-		} else {
-			// Check if it's a translation PR
-			isTranslation := false
-			for _, label := range pr.Labels {
-				if label.Name == "translation" {
-					isTranslation = true
-					break
-				}
-			}
+			continue
+		}
 
-			prURL := fmt.Sprintf("https://github.com/%s/pull/%d", repo, prNum)
-			if isTranslation {
-				summary.TranslationPRs = append(summary.TranslationPRs, prURL)
-			} else {
-				summary.UnlinkedPRs = append(summary.UnlinkedPRs, prURL)
+		isTranslation := false
+		for _, label := range pr.Labels {
+			if label.Name == "translation" {
+				isTranslation = true
+				break
 			}
+		}
+
+		prURL := fmt.Sprintf("https://github.com/%s/pull/%d", repo, prNum)
+		if isTranslation {
+			summary.TranslationPRs = append(summary.TranslationPRs, prURL)
+		} else {
+			summary.UnlinkedPRs = append(summary.UnlinkedPRs, prURL)
 		}
 	}
 
-	// Find orphan commits (not in any PR)
 	for _, commit := range comparison.Commits {
 		if !commitsInPRs[commit.SHA] {
 			commitURL := fmt.Sprintf("https://github.com/%s/commit/%s", repo, commit.SHA)
 			summary.OrphanCommits = append(summary.OrphanCommits, commitURL)
 		}
 	}
-
-	// Display summary
-	summary.Display()
-
-	return nil
 }

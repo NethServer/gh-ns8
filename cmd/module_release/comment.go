@@ -2,6 +2,8 @@ package module_release
 
 import (
 	"fmt"
+	"io"
+	"sort"
 
 	"github.com/NethServer/gh-ns8/internal/github"
 	"github.com/NethServer/gh-ns8/internal/module_release"
@@ -15,6 +17,16 @@ var commentCmd = &cobra.Command{
 	Long:  `Post release notifications on open linked issues and their parent issues.`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runComment,
+}
+
+type linkedIssueCollector interface {
+	GetPullRequest(repo string, number int) (*github.PullRequest, error)
+}
+
+type issueCommentClient interface {
+	GetIssue(repo string, number int) (*github.Issue, error)
+	CreateIssueComment(repo string, number int, body string) (string, error)
+	GetParentIssueNumber(repo string, issueNumber int) (int, error)
 }
 
 func runComment(cmd *cobra.Command, args []string) error {
@@ -62,19 +74,7 @@ func runComment(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to scan PRs: %w", err)
 	}
 
-	// Collect all linked issues
-	issueMap := make(map[int]bool)
-	for _, prNum := range prNumbers {
-		pr, err := client.GetPullRequest(repo, prNum)
-		if err != nil {
-			continue
-		}
-
-		linkedIssues := module_release.GetLinkedIssues(pr.Body, issuesRepoFlag)
-		for _, issueNum := range linkedIssues {
-			issueMap[issueNum] = true
-		}
-	}
+	issueMap := collectLinkedIssues(client, repo, issuesRepoFlag, prNumbers)
 
 	if len(issueMap) == 0 {
 		fmt.Println("No linked issues found for this release.")
@@ -82,22 +82,42 @@ func runComment(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create comment based on release type
-	var commentBody string
-	if release.IsPrerelease {
-		commentBody = fmt.Sprintf("Testing release `%s` [%s](https://github.com/%s/releases/tag/%s)",
-			repo, releaseName, repo, releaseName)
-	} else {
-		commentBody = fmt.Sprintf("Release `%s` [%s](https://github.com/%s/releases/tag/%s)",
-			repo, releaseName, repo, releaseName)
+	commentBody := releaseCommentBody(repo, releaseName, release.IsPrerelease)
+
+	postReleaseComments(cmd.OutOrStdout(), cmd.ErrOrStderr(), client, issuesRepoFlag, commentBody, issueMap)
+
+	return nil
+}
+
+func collectLinkedIssues(client linkedIssueCollector, repo, issuesRepo string, prNumbers []int) map[int]bool {
+	issueMap := make(map[int]bool)
+	for _, prNum := range prNumbers {
+		pr, err := client.GetPullRequest(repo, prNum)
+		if err != nil {
+			continue
+		}
+
+		linkedIssues := module_release.GetLinkedIssues(pr.Body, issuesRepo)
+		for _, issueNum := range linkedIssues {
+			issueMap[issueNum] = true
+		}
 	}
 
-	// Post comments on open issues
-	commentedCount := 0
+	return issueMap
+}
+
+func postReleaseComments(out, errWriter io.Writer, client issueCommentClient, issuesRepo, commentBody string, issueMap map[int]bool) int {
+	issueNumbers := make([]int, 0, len(issueMap))
 	for issueNum := range issueMap {
-		// Check if issue is open
-		issue, err := client.GetIssue(issuesRepoFlag, issueNum)
+		issueNumbers = append(issueNumbers, issueNum)
+	}
+	sort.Ints(issueNumbers)
+
+	commentedCount := 0
+	for _, issueNum := range issueNumbers {
+		issue, err := client.GetIssue(issuesRepo, issueNum)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get issue %d: %v\n", issueNum, err)
+			fmt.Fprintf(errWriter, "Warning: failed to get issue %d: %v\n", issueNum, err)
 			continue
 		}
 
@@ -105,38 +125,50 @@ func runComment(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Post comment on issue
-		commentURL, err := client.CreateIssueComment(issuesRepoFlag, issueNum, commentBody)
+		commentURL, err := client.CreateIssueComment(issuesRepo, issueNum, commentBody)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to comment on issue %d: %v\n", issueNum, err)
+			fmt.Fprintf(errWriter, "Warning: failed to comment on issue %d: %v\n", issueNum, err)
 			continue
 		}
 
-		fmt.Printf("✅ Commented on issue %s#%d\n   %s\n", issuesRepoFlag, issueNum, commentURL)
+		fmt.Fprintf(out, "✅ Commented on issue %s#%d\n   %s\n", issuesRepo, issueNum, commentURL)
 		commentedCount++
 
-		// Check for parent issue and comment there too
-		parentNum, err := client.GetParentIssueNumber(issuesRepoFlag, issueNum)
-		if err == nil && parentNum > 0 {
-			// Check if parent is open
-			parentIssue, err := client.GetIssue(issuesRepoFlag, parentNum)
-			if err == nil && parentIssue.State != "CLOSED" && parentIssue.State != "closed" {
-				parentCommentURL, err := client.CreateIssueComment(issuesRepoFlag, parentNum, commentBody)
-				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to comment on parent issue %d: %v\n", parentNum, err)
-				} else {
-					fmt.Printf("✅ Commented on parent issue %s#%d\n   %s\n", issuesRepoFlag, parentNum, parentCommentURL)
-					commentedCount++
-				}
-			}
+		parentNum, err := client.GetParentIssueNumber(issuesRepo, issueNum)
+		if err != nil || parentNum <= 0 {
+			continue
 		}
+
+		parentIssue, err := client.GetIssue(issuesRepo, parentNum)
+		if err != nil || parentIssue.State == "CLOSED" || parentIssue.State == "closed" {
+			continue
+		}
+
+		parentCommentURL, err := client.CreateIssueComment(issuesRepo, parentNum, commentBody)
+		if err != nil {
+			fmt.Fprintf(errWriter, "Warning: failed to comment on parent issue %d: %v\n", parentNum, err)
+			continue
+		}
+
+		fmt.Fprintf(out, "✅ Commented on parent issue %s#%d\n   %s\n", issuesRepo, parentNum, parentCommentURL)
+		commentedCount++
 	}
 
 	if commentedCount == 0 {
-		fmt.Println("No open issues to comment on.")
+		fmt.Fprintln(out, "No open issues to comment on.")
 	} else {
-		fmt.Printf("\n✅ Posted %d comment(s) successfully\n", commentedCount)
+		fmt.Fprintf(out, "\n✅ Posted %d comment(s) successfully\n", commentedCount)
 	}
 
-	return nil
+	return commentedCount
+}
+
+func releaseCommentBody(repo, releaseName string, prerelease bool) string {
+	if prerelease {
+		return fmt.Sprintf("Testing release `%s` [%s](https://github.com/%s/releases/tag/%s)",
+			repo, releaseName, repo, releaseName)
+	}
+
+	return fmt.Sprintf("Release `%s` [%s](https://github.com/%s/releases/tag/%s)",
+		repo, releaseName, repo, releaseName)
 }
