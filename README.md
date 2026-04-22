@@ -414,12 +414,24 @@ internal/
 go build -o gh-ns8
 ```
 
+### Validation
+
+```bash
+go vet ./...
+go test ./...
+```
+
 ### Testing Locally
 
 ```bash
 gh extension install .
 gh ns8 module-release --help
 ```
+
+Patch dependency updates are already configured for Renovate automerge in
+`renovate.json`. The repository now exposes the `ci / validate` check for pull
+requests; mark that check as required in the repository branch protection rules
+to ensure patch PRs only auto-merge after build, vet, and test pass.
 
 ### Releasing
 
