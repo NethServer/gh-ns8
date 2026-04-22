@@ -467,7 +467,7 @@ The project uses the `gh-extension-precompile` GitHub Action for automated cross
 ## Prerequisites
 
 - [GitHub CLI](https://cli.github.com/): `gh` (v2.0.0 or later)
-- Go 1.21+ (for development only)
+- Go 1.25+ (for development only)
 
 ## Troubleshooting
 
