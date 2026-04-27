@@ -18,6 +18,7 @@ type fakeCheckSummaryClient struct {
 	issueErrs    map[int]error
 	parentIssues map[int]int
 	parentErrs   map[int]error
+	openPRs      map[string][]ghgithub.OpenPullRequest
 }
 
 func (f fakeCheckSummaryClient) GetPullRequestsForCommit(_ string, sha string) ([]int, error) {
@@ -48,24 +49,32 @@ func (f fakeCheckSummaryClient) GetParentIssueNumber(_ string, issueNumber int) 
 	return f.parentIssues[issueNumber], nil
 }
 
+func (f fakeCheckSummaryClient) ListOpenPullRequestsByAuthor(_ string, author string) ([]ghgithub.OpenPullRequest, error) {
+	return f.openPRs[author], nil
+}
+
 func TestPopulateCheckSummaryCategorizesPRsAndOrphans(t *testing.T) {
 	var errBuf bytes.Buffer
 	client := fakeCheckSummaryClient{
 		commitPRs: map[string][]int{
 			"commit-a": {1},
-			"commit-c": {2, 3},
+			"commit-c": {2, 3, 5},
 		},
 		prs: map[int]*ghgithub.PullRequest{
 			1: {Body: "Refs NethServer/dev#10 and NethServer/dev#20"},
 			2: {
 				Body: "Translation update",
-				Labels: []struct {
-					Name string `json:"name"`
-				}{
-					{Name: "translation"},
-				},
+				User: struct {
+					Login string `json:"login"`
+				}{Login: "weblate"},
 			},
 			3: {Body: "No linked issues"},
+			5: {
+				Body: "Bump dependency",
+				User: struct {
+					Login string `json:"login"`
+				}{Login: "renovate[bot]"},
+			},
 		},
 		prErrs: map[int]error{
 			4: errors.New("missing PR"),
@@ -97,10 +106,13 @@ func TestPopulateCheckSummaryCategorizesPRsAndOrphans(t *testing.T) {
 	}
 
 	summary := internalmodule.NewCheckSummary("NethServer/dev")
-	populateCheckSummary(&errBuf, client, summary, "NethServer/ns8-mail", makeCommandCompareResult("commit-a", "commit-b", "commit-c"), []int{1, 2, 3, 4})
+	populateCheckSummary(&errBuf, client, summary, "NethServer/ns8-mail", makeCommandCompareResult("commit-a", "commit-b", "commit-c"), []int{1, 2, 3, 4, 5})
 
-	if len(summary.TranslationPRs) != 1 || summary.TranslationPRs[0] != "https://github.com/NethServer/ns8-mail/pull/2" {
-		t.Fatalf("TranslationPRs = %v, want translation PR URL", summary.TranslationPRs)
+	if len(summary.WeblatePRs) != 1 || summary.WeblatePRs[0] != "https://github.com/NethServer/ns8-mail/pull/2" {
+		t.Fatalf("WeblatePRs = %v, want weblate PR URL", summary.WeblatePRs)
+	}
+	if len(summary.RenovatePRs) != 1 || summary.RenovatePRs[0] != "https://github.com/NethServer/ns8-mail/pull/5" {
+		t.Fatalf("RenovatePRs = %v, want renovate PR URL", summary.RenovatePRs)
 	}
 	if len(summary.UnlinkedPRs) != 1 || summary.UnlinkedPRs[0] != "https://github.com/NethServer/ns8-mail/pull/3" {
 		t.Fatalf("UnlinkedPRs = %v, want unlinked PR URL", summary.UnlinkedPRs)

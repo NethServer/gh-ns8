@@ -223,6 +223,9 @@ func (c *Client) DeleteRelease(repo, tag string) error {
 type PullRequest struct {
 	Number int    `json:"number"`
 	Body   string `json:"body"`
+	User   struct {
+		Login string `json:"login"`
+	} `json:"user"`
 	Labels []struct {
 		Name string `json:"name"`
 	} `json:"labels"`
@@ -372,4 +375,33 @@ func GetCurrentRepository() (string, error) {
 		return "", fmt.Errorf("failed to get current repository: %w", err)
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+// OpenPullRequest represents a minimal open PR
+type OpenPullRequest struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+}
+
+// ListOpenPullRequestsByAuthor lists open PRs by a given author
+func (c *Client) ListOpenPullRequestsByAuthor(repo, author string) ([]OpenPullRequest, error) {
+	args := []string{
+		"pr", "list",
+		"--repo", repo,
+		"--author", author,
+		"--state", "open",
+		"--json", "number,url",
+	}
+
+	stdout, _, err := gh.Exec(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list open PRs: %w", err)
+	}
+
+	var prs []OpenPullRequest
+	if err := json.Unmarshal(stdout.Bytes(), &prs); err != nil {
+		return nil, fmt.Errorf("failed to parse open PRs: %w", err)
+	}
+
+	return prs, nil
 }

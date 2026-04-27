@@ -22,6 +22,7 @@ type checkSummaryClient interface {
 	GetPullRequest(repo string, number int) (*github.PullRequest, error)
 	GetIssue(repo string, number int) (*github.Issue, error)
 	GetParentIssueNumber(repo string, issueNumber int) (int, error)
+	ListOpenPullRequestsByAuthor(repo, author string) ([]github.OpenPullRequest, error)
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
@@ -83,6 +84,16 @@ func runCheck(cmd *cobra.Command, args []string) error {
 
 	populateCheckSummary(cmd.ErrOrStderr(), client, summary, repo, comparison, prNumbers)
 
+	// Check for open Weblate PRs
+	openWeblatePRs, err := client.ListOpenPullRequestsByAuthor(repo, "weblate")
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check open Weblate PRs: %v\n", err)
+	} else {
+		for _, pr := range openWeblatePRs {
+			summary.OpenWeblatePRs = append(summary.OpenWeblatePRs, pr.URL)
+		}
+	}
+
 	// Display summary
 	summary.Display()
 
@@ -104,6 +115,17 @@ func populateCheckSummary(errWriter io.Writer, client checkSummaryClient, summar
 			continue
 		}
 
+		prURL := fmt.Sprintf("https://github.com/%s/pull/%d", repo, prNum)
+
+		switch pr.User.Login {
+		case "weblate":
+			summary.WeblatePRs = append(summary.WeblatePRs, prURL)
+			continue
+		case "renovate[bot]":
+			summary.RenovatePRs = append(summary.RenovatePRs, prURL)
+			continue
+		}
+
 		linkedIssues := module_release.GetLinkedIssues(pr.Body, summary.IssuesRepo)
 		if len(linkedIssues) > 0 {
 			for _, issueNum := range linkedIssues {
@@ -114,20 +136,7 @@ func populateCheckSummary(errWriter io.Writer, client checkSummaryClient, summar
 			continue
 		}
 
-		isTranslation := false
-		for _, label := range pr.Labels {
-			if label.Name == "translation" {
-				isTranslation = true
-				break
-			}
-		}
-
-		prURL := fmt.Sprintf("https://github.com/%s/pull/%d", repo, prNum)
-		if isTranslation {
-			summary.TranslationPRs = append(summary.TranslationPRs, prURL)
-		} else {
-			summary.UnlinkedPRs = append(summary.UnlinkedPRs, prURL)
-		}
+		summary.UnlinkedPRs = append(summary.UnlinkedPRs, prURL)
 	}
 
 	for _, commit := range comparison.Commits {

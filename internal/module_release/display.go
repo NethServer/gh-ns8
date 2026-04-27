@@ -41,7 +41,9 @@ type IssueInfo struct {
 // CheckSummary holds all information for the check command display
 type CheckSummary struct {
 	UnlinkedPRs    []string
-	TranslationPRs []string
+	WeblatePRs     []string
+	RenovatePRs    []string
+	OpenWeblatePRs []string
 	OrphanCommits  []string
 	Issues         map[int]*IssueInfo
 	IssuesRepo     string
@@ -255,6 +257,15 @@ func bashHashString(key string) uint32 {
 
 // Display prints the check summary
 func (cs *CheckSummary) Display() {
+	// Open Weblate PRs warning
+	if len(cs.OpenWeblatePRs) > 0 {
+		fmt.Printf("%s⚠️  Open Weblate PRs detected:%s\n", ColorYellow, ColorReset)
+		for _, pr := range cs.OpenWeblatePRs {
+			fmt.Println(pr)
+		}
+		fmt.Println()
+	}
+
 	fmt.Println("Summary:")
 	fmt.Println("--------")
 
@@ -267,10 +278,19 @@ func (cs *CheckSummary) Display() {
 		fmt.Println()
 	}
 
-	// Translation PRs
-	if len(cs.TranslationPRs) > 0 {
-		fmt.Printf("%sTranslation PRs:%s\n", ColorCyan, ColorReset)
-		for _, pr := range cs.TranslationPRs {
+	// Weblate PRs
+	if len(cs.WeblatePRs) > 0 {
+		fmt.Printf("%sWeblate PRs:%s\n", ColorCyan, ColorReset)
+		for _, pr := range cs.WeblatePRs {
+			fmt.Println(pr)
+		}
+		fmt.Println()
+	}
+
+	// Renovate PRs
+	if len(cs.RenovatePRs) > 0 {
+		fmt.Printf("%sRenovate PRs:%s\n", ColorCyan, ColorReset)
+		for _, pr := range cs.RenovatePRs {
 			fmt.Println(pr)
 		}
 		fmt.Println()

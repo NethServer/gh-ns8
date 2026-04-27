@@ -123,6 +123,67 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	}
 }
 
+func TestDisplayShowsWeblatePRs(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+	summary.WeblatePRs = []string{
+		"https://github.com/NethServer/ns8-test/pull/10",
+		"https://github.com/NethServer/ns8-test/pull/11",
+	}
+
+	output := captureStdout(t, summary.Display)
+	if !strings.Contains(output, "Weblate PRs:") {
+		t.Fatalf("missing Weblate PRs header in output:\n%s", output)
+	}
+	if !strings.Contains(output, "pull/10") || !strings.Contains(output, "pull/11") {
+		t.Fatalf("missing Weblate PR URLs in output:\n%s", output)
+	}
+}
+
+func TestDisplayShowsRenovatePRs(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+	summary.RenovatePRs = []string{
+		"https://github.com/NethServer/ns8-test/pull/20",
+	}
+
+	output := captureStdout(t, summary.Display)
+	if !strings.Contains(output, "Renovate PRs:") {
+		t.Fatalf("missing Renovate PRs header in output:\n%s", output)
+	}
+	if !strings.Contains(output, "pull/20") {
+		t.Fatalf("missing Renovate PR URL in output:\n%s", output)
+	}
+}
+
+func TestDisplayShowsOpenWeblateWarning(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+	summary.OpenWeblatePRs = []string{
+		"https://github.com/NethServer/ns8-test/pull/30",
+	}
+
+	output := captureStdout(t, summary.Display)
+	if !strings.Contains(output, "Open Weblate PRs detected:") {
+		t.Fatalf("missing open Weblate warning in output:\n%s", output)
+	}
+	if !strings.Contains(output, "pull/30") {
+		t.Fatalf("missing open Weblate PR URL in output:\n%s", output)
+	}
+}
+
+func TestDisplayHidesEmptySections(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+
+	output := captureStdout(t, summary.Display)
+	if strings.Contains(output, "Weblate PRs:") {
+		t.Fatalf("should not show Weblate section when empty:\n%s", output)
+	}
+	if strings.Contains(output, "Renovate PRs:") {
+		t.Fatalf("should not show Renovate section when empty:\n%s", output)
+	}
+	if strings.Contains(output, "Open Weblate PRs detected:") {
+		t.Fatalf("should not show open Weblate warning when empty:\n%s", output)
+	}
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
