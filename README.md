@@ -26,6 +26,8 @@ A GitHub CLI (`gh`) extension for automating NethServer 8 module release managem
 - Create releases with auto-generated release notes
 - Include linked issues from PRs in release notes
 - Check if a module is ready for release
+- Separate merged Weblate and Renovate PRs in check output
+- Warn when open Weblate PRs are present
 - Comment on linked issues with release notifications
 - Remove pre-releases between stable releases
 - Parent/child issue hierarchy support via GitHub sub-issues API
@@ -320,7 +322,9 @@ gh ns8 module-release check --repo <repo-name>
 The `check` command outputs a summary of:
 
 - PRs without linked issues
-- Translation PRs
+- Merged Weblate PRs
+- Merged Renovate PRs
+- Open Weblate PR warnings
 - Commits outside PRs (orphan commits)
 - Issues with their status and progress
 
@@ -344,14 +348,20 @@ Here are some examples of the `check` command output:
 #### Example: Complete Check Output
 
 ```
+⚠️  Open Weblate PRs detected:
+https://github.com/NethServer/ns8-module/pull/100
+
 Summary:
 --------
 PRs without linked issues:
 https://github.com/NethServer/ns8-module/pull/123
 https://github.com/NethServer/ns8-module/pull/456
 
-Translation PRs:
+Weblate PRs:
 https://github.com/NethServer/ns8-module/pull/789
+
+Renovate PRs:
+https://github.com/NethServer/ns8-module/pull/790
 
 Commits outside PRs:
 https://github.com/NethServer/ns8-module/commit/abc123
@@ -359,12 +369,17 @@ https://github.com/NethServer/ns8-module/commit/abc123
 Issues:
 🟢 🚧 https://github.com/NethServer/dev/issues/101 (2) bug
 🟣 ✅ https://github.com/NethServer/dev/issues/102 (1) enhancement
-└─ 🟢 🔨 https://github.com/NethServer/dev/issues/103 (1) documentation
+└─🟢 🔨 https://github.com/NethServer/dev/issues/103 (1) documentation
 
 ---
 Issue status:    🟢 Open    🟣 Closed
 Progress status: 🚧 In Progress    🔨 Testing    ✅ Verified
 ```
+
+Weblate PRs are identified by author login `weblate`, while Renovate PRs are
+identified by author login `renovate[bot]`. Weblate and Renovate PRs are shown
+separately from the generic "PRs without linked issues" section. If open
+Weblate PRs exist, the command prints a warning before the summary.
 
 ## Migration from Bash
 
