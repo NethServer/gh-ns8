@@ -321,11 +321,11 @@ gh ns8 module-release check --repo <repo-name>
 
 The `check` command outputs a summary of:
 
-- A single PR list grouped by type and ordered by status
+- A single top-level PR list for PRs without linked issues
 - Open PR mergeability (`mergeable`, `blocked`, or `unknown`)
 - Open Weblate PR warnings
 - Commits outside PRs (orphan commits)
-- Issues with their status and progress
+- Issues with their status, progress, and linked PRs
 
 ### Emojis Used
 
@@ -333,9 +333,9 @@ The `check` command uses emojis to indicate the status and progress of PRs and
 issues:
 
 - **PR status:**
-  - 🟢 Open
-  - 🟣 Merged
-  - ⚫ Closed
+  - 🟩 Open
+  - 🟪 Merged
+  - ⬛ Closed
 
 - **PR type:**
   - ✅ Verified
@@ -366,21 +366,20 @@ https://github.com/NethServer/ns8-module/pull/100
 Summary:
 --------
 PRs:
-🟢   🔨 https://github.com/NethServer/ns8-module/pull/456 mergeable
-🟢   🌐 https://github.com/NethServer/ns8-module/pull/100 unknown
-🟣   ✅ https://github.com/NethServer/ns8-module/pull/123 nethvoice
-🟣   🤖 https://github.com/NethServer/ns8-module/pull/790 dependencies
-🟣   🔀 https://github.com/NethServer/ns8-module/pull/789
+🟪   🤖 https://github.com/NethServer/ns8-module/pull/790 dependencies
+🟪   🔀 https://github.com/NethServer/ns8-module/pull/789 cleanup
 
 ---
-PR status:       🟢 Open    🟣 Merged    ⚫ Closed
+PR status:       🟩 Open    🟪 Merged    ⬛ Closed
 PR type:         ✅ Verified    🔨 Testing    🤖 Renovate    🌐 Translation    🔀 Merged
 Open PR state:   mergeable    blocked    unknown
 
 Issues:
 🟢   🚧 https://github.com/NethServer/dev/issues/101 (2) bug
+├─🟩 🔨 https://github.com/NethServer/ns8-module/pull/456 mergeable
+└─🟪 ✅ https://github.com/NethServer/ns8-module/pull/123 nethvoice
 🟣   ✅ https://github.com/NethServer/dev/issues/102 (1) enhancement
-└─🟢 🔨 https://github.com/NethServer/dev/issues/103 (1) documentation
+└─🟩 🌐 https://github.com/NethServer/ns8-module/pull/100 unknown
 
 ---
 Issue status:    🟢 Open    🟣 Closed
@@ -398,8 +397,9 @@ merged Renovate PRs remain in the renovate category even if they also carry
 `testing` or `verified` label, or when they are authored by Weblate. The PR
 list is shown as a single section sorted by PR status first (`open`, `merged`,
 `closed`) and by PR type second (`verified`, `testing`, `renovate`,
-`translation`, `merged`). If open Weblate PRs exist, the command also prints
-the warning before the summary.
+`translation`, `merged`). When a PR links one or more issues, it is rendered
+only under those issues and is omitted from the top-level PR list. If open
+Weblate PRs exist, the command also prints the warning before the summary.
 
 ## Migration from Bash
 

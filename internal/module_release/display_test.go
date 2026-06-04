@@ -153,13 +153,13 @@ func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 	}
 
 	wantOrder := []string{
-		"🟢   ✅ https://github.com/NethServer/ns8-test/pull/10 mergeable nethvoice",
-		"🟢   🔨 https://github.com/NethServer/ns8-test/pull/11 blocked",
-		"🟢   🌐 https://github.com/NethServer/ns8-test/pull/13 unknown",
-		"🟣   ✅ https://github.com/NethServer/ns8-test/pull/15",
-		"🟣   🔨 https://github.com/NethServer/ns8-test/pull/18",
-		"🟣   🤖 https://github.com/NethServer/ns8-test/pull/12 dependencies",
-		"🟣   🔀 https://github.com/NethServer/ns8-test/pull/14",
+		"🟩   ✅ https://github.com/NethServer/ns8-test/pull/10 mergeable nethvoice",
+		"🟩   🔨 https://github.com/NethServer/ns8-test/pull/11 blocked",
+		"🟩   🌐 https://github.com/NethServer/ns8-test/pull/13 unknown",
+		"🟪   ✅ https://github.com/NethServer/ns8-test/pull/15",
+		"🟪   🔨 https://github.com/NethServer/ns8-test/pull/18",
+		"🟪   🤖 https://github.com/NethServer/ns8-test/pull/12 dependencies",
+		"🟪   🔀 https://github.com/NethServer/ns8-test/pull/14",
 	}
 	lastIndex := -1
 	for _, want := range wantOrder {
@@ -171,6 +171,37 @@ func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 			t.Fatalf("pull request output is not in expected order:\n%s", output)
 		}
 		lastIndex = index
+	}
+}
+
+func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+	mergeable := true
+	issue := &IssueInfo{
+		Number:   100,
+		Status:   EmojiOpenIssue,
+		Progress: EmojiTesting,
+		RefCount: 2,
+	}
+	issue.LinkedPRs = []PRInfo{
+		newPRInfo("NethServer/ns8-test", makeDisplayPullRequest(11, "closed", true, nil, "", false), PRCategoryMerged),
+		newPRInfo("NethServer/ns8-test", makeDisplayPullRequest(10, "open", false, &mergeable, "clean", false), PRCategoryVerified),
+	}
+	summary.Issues[100] = issue
+	summary.issueOrder = []int{100}
+
+	output := captureStdout(t, summary.Display)
+	if strings.Contains(output, "PRs:") {
+		t.Fatalf("linked PRs should not create a top-level PR section:\n%s", output)
+	}
+	for _, want := range []string{
+		"🟢   🔨 https://github.com/NethServer/dev/issues/100 (2)",
+		"├─🟩 ✅ https://github.com/NethServer/ns8-test/pull/10 mergeable",
+		"└─🟪 🔀 https://github.com/NethServer/ns8-test/pull/11",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in output:\n%s", want, output)
+		}
 	}
 }
 

@@ -26,9 +26,9 @@ const (
 	EmojiInProgress  = "🚧"
 	EmojiTesting     = "🔨"
 	EmojiVerified    = "✅"
-	EmojiOpenPR      = "🟢"
-	EmojiMergedPR    = "🟣"
-	EmojiClosedPR    = "⚫"
+	EmojiOpenPR      = "🟩"
+	EmojiMergedPR    = "🟪"
+	EmojiClosedPR    = "⬛"
 	EmojiRenovate    = "🤖"
 	EmojiTranslation = "🌐"
 	EmojiMerged      = "🔀"
@@ -50,6 +50,7 @@ type IssueInfo struct {
 	RefCount     int    // Number of PRs referencing this issue
 	ParentNumber int    // Parent issue number (0 if none)
 	Children     []int  // Child issue numbers
+	LinkedPRs    []PRInfo
 }
 
 // PRCategory identifies the display bucket for a PR.
@@ -66,6 +67,7 @@ const (
 // PRInfo holds display information about a pull request.
 type PRInfo struct {
 	Number       int
+	Category     PRCategory
 	URL          string
 	Status       string
 	Progress     string
@@ -120,6 +122,7 @@ func (cs *CheckSummary) AddPullRequest(repo string, pr *github.PullRequest, cate
 func newPRInfo(repo string, pr *github.PullRequest, category PRCategory) PRInfo {
 	return PRInfo{
 		Number:       pr.Number,
+		Category:     category,
 		URL:          pullRequestURL(repo, pr),
 		Status:       pullRequestStatus(pr),
 		Progress:     pullRequestProgress(category),
@@ -195,6 +198,23 @@ func filteredPullRequestLabels(pr *github.PullRequest) string {
 		labelNames = append(labelNames, label.Name)
 	}
 	return strings.Join(labelNames, " ")
+}
+
+// AddIssuePullRequest records a PR under a linked issue and avoids duplicates.
+func (cs *CheckSummary) AddIssuePullRequest(repo string, issueNumber int, pr *github.PullRequest, category PRCategory) {
+	info, exists := cs.Issues[issueNumber]
+	if !exists {
+		return
+	}
+
+	prInfo := newPRInfo(repo, pr, category)
+	for _, existing := range info.LinkedPRs {
+		if existing.Number == prInfo.Number {
+			return
+		}
+	}
+
+	info.LinkedPRs = append(info.LinkedPRs, prInfo)
 }
 
 // ProcessIssue processes an issue and adds it to the summary
@@ -488,6 +508,20 @@ func (cs *CheckSummary) allPullRequests() []PRInfo {
 			len(cs.RenovatePRs)+
 			len(cs.TranslationPRs)+
 			len(cs.MergedPRs))
+	prs = append(prs, cs.allTopLevelPullRequests()...)
+	for _, issue := range cs.Issues {
+		prs = append(prs, issue.LinkedPRs...)
+	}
+	return prs
+}
+
+func (cs *CheckSummary) allTopLevelPullRequests() []PRInfo {
+	prs := make([]PRInfo, 0,
+		len(cs.VerifiedPRs)+
+			len(cs.TestingPRs)+
+			len(cs.RenovatePRs)+
+			len(cs.TranslationPRs)+
+			len(cs.MergedPRs))
 	prs = append(prs, cs.VerifiedPRs...)
 	prs = append(prs, cs.TestingPRs...)
 	prs = append(prs, cs.RenovatePRs...)
@@ -497,25 +531,22 @@ func (cs *CheckSummary) allPullRequests() []PRInfo {
 }
 
 func (cs *CheckSummary) orderedPullRequests() []PRInfo {
+	return orderedPullRequestInfos(cs.allTopLevelPullRequests())
+}
+
+func orderedPullRequestInfos(prs []PRInfo) []PRInfo {
 	ordered := make([]PRInfo, 0,
-		len(cs.VerifiedPRs)+
-			len(cs.TestingPRs)+
-			len(cs.RenovatePRs)+
-			len(cs.TranslationPRs)+
-			len(cs.MergedPRs))
-
-	groups := [][]PRInfo{
-		sortPullRequestGroup(cs.VerifiedPRs),
-		sortPullRequestGroup(cs.TestingPRs),
-		sortPullRequestGroup(cs.RenovatePRs),
-		sortPullRequestGroup(cs.TranslationPRs),
-		sortPullRequestGroup(cs.MergedPRs),
-	}
-
+		len(prs))
 	for _, status := range []string{EmojiOpenPR, EmojiMergedPR, EmojiClosedPR} {
-		for _, group := range groups {
-			for _, pr := range group {
-				if pr.Status == status {
+		for _, category := range []PRCategory{
+			PRCategoryVerified,
+			PRCategoryTesting,
+			PRCategoryRenovate,
+			PRCategoryTranslation,
+			PRCategoryMerged,
+		} {
+			for _, pr := range sortPullRequestGroup(prs) {
+				if pr.Status == status && pr.Category == category {
 					ordered = append(ordered, pr)
 				}
 			}
@@ -573,6 +604,14 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 		info.RefCount,
 		info.Labels)
 
+	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
+		prefix := "├─"
+		if idx == len(info.LinkedPRs)-1 && len(info.Children) == 0 {
+			prefix = "└─"
+		}
+		displayNestedPullRequest(prefix, pr)
+	}
+
 	// Display children
 	for _, childNum := range info.Children {
 		if childInfo, exists := cs.Issues[childNum]; exists {
@@ -590,4 +629,34 @@ func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
 		issueURL,
 		info.RefCount,
 		info.Labels)
+
+	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
+		prefix := "  ├─"
+		if idx == len(info.LinkedPRs)-1 {
+			prefix = "  └─"
+		}
+		displayNestedPullRequest(prefix, pr)
+	}
+}
+
+func displayNestedPullRequest(prefix string, info PRInfo) {
+	details := make([]string, 0, 2)
+	if info.Mergeability != "" {
+		details = append(details, info.Mergeability)
+	}
+	if info.Labels != "" {
+		details = append(details, info.Labels)
+	}
+
+	suffix := ""
+	if len(details) > 0 {
+		suffix = " " + strings.Join(details, " ")
+	}
+
+	fmt.Printf("%s%s %s %s%s\n",
+		prefix,
+		info.Status,
+		info.Progress,
+		info.URL,
+		suffix)
 }

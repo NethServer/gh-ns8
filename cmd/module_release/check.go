@@ -188,13 +188,20 @@ func openPullRequestURL(repo string, pr github.OpenPullRequest) string {
 }
 
 func processPullRequest(errWriter io.Writer, client checkSummaryClient, summary *module_release.CheckSummary, repo string, pr *github.PullRequest) {
-	summary.AddPullRequest(repo, pr, categorizePullRequest(pr))
+	category := categorizePullRequest(pr)
 
 	linkedIssues := module_release.GetLinkedIssues(pr.Body, summary.IssuesRepo)
+	if len(linkedIssues) == 0 {
+		summary.AddPullRequest(repo, pr, category)
+		return
+	}
+
 	for _, issueNum := range linkedIssues {
 		if err := summary.ProcessIssue(client, issueNum); err != nil {
 			fmt.Fprintf(errWriter, "Warning: failed to process issue %d: %v\n", issueNum, err)
+			continue
 		}
+		summary.AddIssuePullRequest(repo, issueNum, pr, category)
 	}
 }
 

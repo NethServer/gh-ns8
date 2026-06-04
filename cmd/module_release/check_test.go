@@ -113,8 +113,8 @@ func TestPopulateCheckSummaryCategorizesPRsAndOrphans(t *testing.T) {
 	if len(summary.RenovatePRs) != 1 || summary.RenovatePRs[0].URL != "https://github.com/NethServer/ns8-mail/pull/5" {
 		t.Fatalf("RenovatePRs = %v, want renovate PR URL", summary.RenovatePRs)
 	}
-	if len(summary.MergedPRs) != 2 || summary.MergedPRs[0].Number != 1 || summary.MergedPRs[1].Number != 3 {
-		t.Fatalf("MergedPRs = %v, want remaining merged PRs 1 and 3", summary.MergedPRs)
+	if len(summary.MergedPRs) != 1 || summary.MergedPRs[0].Number != 3 {
+		t.Fatalf("MergedPRs = %v, want only unlinked merged PR 3", summary.MergedPRs)
 	}
 	if len(summary.OrphanCommits) != 1 || summary.OrphanCommits[0] != "https://github.com/NethServer/ns8-mail/commit/commit-b" {
 		t.Fatalf("OrphanCommits = %v, want orphan commit URL", summary.OrphanCommits)
@@ -129,6 +129,9 @@ func TestPopulateCheckSummaryCategorizesPRsAndOrphans(t *testing.T) {
 	}
 	if issue.Progress != internalmodule.EmojiTesting {
 		t.Fatalf("summary.Issues[10].Progress = %q, want %q", issue.Progress, internalmodule.EmojiTesting)
+	}
+	if len(issue.LinkedPRs) != 1 || issue.LinkedPRs[0].Number != 1 {
+		t.Fatalf("summary.Issues[10].LinkedPRs = %v, want PR 1 linked under issue", issue.LinkedPRs)
 	}
 
 	parent := summary.Issues[100]
@@ -205,8 +208,8 @@ func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 	if len(summary.TranslationPRs) != 1 || summary.TranslationPRs[0].Number != 6 {
 		t.Fatalf("TranslationPRs = %v, want open Weblate PR", summary.TranslationPRs)
 	}
-	if len(summary.VerifiedPRs) != 1 || summary.VerifiedPRs[0].Number != 7 {
-		t.Fatalf("VerifiedPRs = %v, want open verified PR", summary.VerifiedPRs)
+	if len(summary.VerifiedPRs) != 0 {
+		t.Fatalf("VerifiedPRs = %v, want linked verified PR removed from top list", summary.VerifiedPRs)
 	}
 	if len(summary.TestingPRs) != 2 || summary.TestingPRs[0].Number != 8 || summary.TestingPRs[1].Number != 9 {
 		t.Fatalf("TestingPRs = %v, want open testing PRs", summary.TestingPRs)
@@ -216,6 +219,9 @@ func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 	}
 	if summary.Issues[30] == nil || summary.Issues[30].Progress != internalmodule.EmojiVerified {
 		t.Fatalf("Issues[30] = %v, want processed linked issue", summary.Issues[30])
+	}
+	if len(summary.Issues[30].LinkedPRs) != 1 || summary.Issues[30].LinkedPRs[0].Number != 7 {
+		t.Fatalf("Issues[30].LinkedPRs = %v, want linked PR 7 under issue", summary.Issues[30].LinkedPRs)
 	}
 }
 
