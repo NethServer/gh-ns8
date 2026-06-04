@@ -57,10 +57,9 @@ type IssueInfo struct {
 type PRCategory int
 
 const (
-	PRCategoryVerified PRCategory = iota
-	PRCategoryTesting
-	PRCategoryRenovate
+	PRCategoryRenovate PRCategory = iota
 	PRCategoryTranslation
+	PRCategoryGeneric
 	PRCategoryMerged
 )
 
@@ -77,10 +76,9 @@ type PRInfo struct {
 
 // CheckSummary holds all information for the check command display
 type CheckSummary struct {
-	VerifiedPRs    []PRInfo
-	TestingPRs     []PRInfo
 	RenovatePRs    []PRInfo
 	TranslationPRs []PRInfo
+	GenericPRs     []PRInfo
 	MergedPRs      []PRInfo
 	OpenWeblatePRs []string
 	OrphanCommits  []string
@@ -106,14 +104,12 @@ func NewCheckSummary(issuesRepo string) *CheckSummary {
 func (cs *CheckSummary) AddPullRequest(repo string, pr *github.PullRequest, category PRCategory) {
 	info := newPRInfo(repo, pr, category)
 	switch category {
-	case PRCategoryVerified:
-		cs.VerifiedPRs = append(cs.VerifiedPRs, info)
-	case PRCategoryTesting:
-		cs.TestingPRs = append(cs.TestingPRs, info)
 	case PRCategoryRenovate:
 		cs.RenovatePRs = append(cs.RenovatePRs, info)
 	case PRCategoryTranslation:
 		cs.TranslationPRs = append(cs.TranslationPRs, info)
+	case PRCategoryGeneric:
+		cs.GenericPRs = append(cs.GenericPRs, info)
 	default:
 		cs.MergedPRs = append(cs.MergedPRs, info)
 	}
@@ -127,7 +123,7 @@ func newPRInfo(repo string, pr *github.PullRequest, category PRCategory) PRInfo 
 		Status:       pullRequestStatus(pr),
 		Progress:     pullRequestProgress(category),
 		Mergeability: pullRequestMergeability(pr),
-		Labels:       filteredPullRequestLabels(pr),
+		Labels:       pullRequestLabels(pr),
 	}
 }
 
@@ -150,14 +146,12 @@ func pullRequestStatus(pr *github.PullRequest) string {
 
 func pullRequestProgress(category PRCategory) string {
 	switch category {
-	case PRCategoryVerified:
-		return EmojiVerified
-	case PRCategoryTesting:
-		return EmojiTesting
 	case PRCategoryRenovate:
 		return EmojiRenovate
 	case PRCategoryTranslation:
 		return EmojiTranslation
+	case PRCategoryGeneric:
+		return ""
 	default:
 		return EmojiMerged
 	}
@@ -189,7 +183,7 @@ func pullRequestMergeability(pr *github.PullRequest) string {
 	}
 }
 
-func filteredPullRequestLabels(pr *github.PullRequest) string {
+func pullRequestLabels(pr *github.PullRequest) string {
 	var labelNames []string
 	for _, label := range pr.Labels {
 		if label.Name == "verified" || label.Name == "testing" {
@@ -479,16 +473,22 @@ func displayPullRequest(info PRInfo) {
 
 	fmt.Printf("%s   %s %s%s\n",
 		info.Status,
-		info.Progress,
+		displayedPullRequestProgress(info),
 		info.URL,
 		suffix)
 }
 
+func displayedPullRequestProgress(info PRInfo) string {
+	if info.Status == EmojiOpenPR {
+		return ""
+	}
+	return info.Progress
+}
+
 func (cs *CheckSummary) hasPullRequests() bool {
-	return len(cs.VerifiedPRs) > 0 ||
-		len(cs.TestingPRs) > 0 ||
-		len(cs.RenovatePRs) > 0 ||
+	return len(cs.RenovatePRs) > 0 ||
 		len(cs.TranslationPRs) > 0 ||
+		len(cs.GenericPRs) > 0 ||
 		len(cs.MergedPRs) > 0
 }
 
@@ -503,10 +503,9 @@ func (cs *CheckSummary) hasBlockedOpenPullRequests() bool {
 
 func (cs *CheckSummary) allPullRequests() []PRInfo {
 	prs := make([]PRInfo, 0,
-		len(cs.VerifiedPRs)+
-			len(cs.TestingPRs)+
-			len(cs.RenovatePRs)+
+		len(cs.RenovatePRs)+
 			len(cs.TranslationPRs)+
+			len(cs.GenericPRs)+
 			len(cs.MergedPRs))
 	prs = append(prs, cs.allTopLevelPullRequests()...)
 	for _, issue := range cs.Issues {
@@ -517,15 +516,13 @@ func (cs *CheckSummary) allPullRequests() []PRInfo {
 
 func (cs *CheckSummary) allTopLevelPullRequests() []PRInfo {
 	prs := make([]PRInfo, 0,
-		len(cs.VerifiedPRs)+
-			len(cs.TestingPRs)+
-			len(cs.RenovatePRs)+
+		len(cs.RenovatePRs)+
 			len(cs.TranslationPRs)+
+			len(cs.GenericPRs)+
 			len(cs.MergedPRs))
-	prs = append(prs, cs.VerifiedPRs...)
-	prs = append(prs, cs.TestingPRs...)
 	prs = append(prs, cs.RenovatePRs...)
 	prs = append(prs, cs.TranslationPRs...)
+	prs = append(prs, cs.GenericPRs...)
 	prs = append(prs, cs.MergedPRs...)
 	return prs
 }
@@ -539,10 +536,9 @@ func orderedPullRequestInfos(prs []PRInfo) []PRInfo {
 		len(prs))
 	for _, status := range []string{EmojiOpenPR, EmojiMergedPR, EmojiClosedPR} {
 		for _, category := range []PRCategory{
-			PRCategoryVerified,
-			PRCategoryTesting,
 			PRCategoryRenovate,
 			PRCategoryTranslation,
+			PRCategoryGeneric,
 			PRCategoryMerged,
 		} {
 			for _, pr := range sortPullRequestGroup(prs) {
@@ -567,7 +563,7 @@ func sortPullRequestGroup(prs []PRInfo) []PRInfo {
 func (cs *CheckSummary) displayPullRequestLegend() {
 	fmt.Println("---")
 	fmt.Printf("PR status:       %s Open    %s Merged    %s Closed\n", EmojiOpenPR, EmojiMergedPR, EmojiClosedPR)
-	fmt.Printf("PR type:         %s Verified    %s Testing    %s Renovate    %s Translation    %s Merged\n", EmojiVerified, EmojiTesting, EmojiRenovate, EmojiTranslation, EmojiMerged)
+	fmt.Printf("PR type:         %s Renovate    %s Translation    %s Merged\n", EmojiRenovate, EmojiTranslation, EmojiMerged)
 	fmt.Printf("Open PR state:   %s    %s    %s\n", PRMergeable, PRBlocked, PRUnknown)
 }
 
@@ -597,11 +593,10 @@ func (cs *CheckSummary) allIssuesVerified() bool {
 // displayIssue displays a single top-level issue and its direct children.
 func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("%s   %s %s (%d) %s\n",
+	fmt.Printf("%s   %s %s %s\n",
 		info.Status,
 		info.Progress,
 		issueURL,
-		info.RefCount,
 		info.Labels)
 
 	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
@@ -623,11 +618,10 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 // displayChildIssue displays a child issue with proper indentation
 func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("└─%s %s %s (%d) %s\n",
+	fmt.Printf("└─%s %s %s %s\n",
 		info.Status,
 		info.Progress,
 		issueURL,
-		info.RefCount,
 		info.Labels)
 
 	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
@@ -656,7 +650,7 @@ func displayNestedPullRequest(prefix string, info PRInfo) {
 	fmt.Printf("%s%s %s %s%s\n",
 		prefix,
 		info.Status,
-		info.Progress,
+		displayedPullRequestProgress(info),
 		info.URL,
 		suffix)
 }

@@ -24,8 +24,7 @@ type checkSummaryClient interface {
 	GetPullRequest(repo string, number int) (*github.PullRequest, error)
 	GetIssue(repo string, number int) (*github.Issue, error)
 	GetParentIssueNumber(repo string, issueNumber int) (int, error)
-	ListOpenPullRequestsByAuthor(repo, author string) ([]github.OpenPullRequest, error)
-	ListOpenPullRequestsByLabel(repo, label string) ([]github.OpenPullRequest, error)
+	ListOpenPullRequests(repo string) ([]github.OpenPullRequest, error)
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
@@ -60,13 +59,17 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get main branch SHA: %w", err)
 	}
 
+	summary := module_release.NewCheckSummary(issuesRepoFlag)
+
 	if latestSHA == mainSHA {
 		fmt.Println("The latest release tag is the HEAD of the main branch, there is nothing to release")
+		populateOpenPullRequests(cmd.ErrOrStderr(), client, summary, repo, map[int]bool{})
+		if len(summary.Issues) > 0 || len(summary.OpenWeblatePRs) > 0 {
+			fmt.Println()
+			summary.Display()
+		}
 		return nil
 	}
-
-	// Create summary
-	summary := module_release.NewCheckSummary(issuesRepoFlag)
 
 	// Get all commits in range
 	comparison, err := client.CompareCommits(repo, latestRelease.TagName, "main")
@@ -125,59 +128,36 @@ func populateCheckSummary(errWriter io.Writer, client checkSummaryClient, summar
 }
 
 func populateOpenPullRequests(errWriter io.Writer, client checkSummaryClient, summary *module_release.CheckSummary, repo string, seenPRs map[int]bool) {
-	openPRs := make(map[int]github.OpenPullRequest)
-
-	openWeblatePRs, err := client.ListOpenPullRequestsByAuthor(repo, "weblate")
+	openPRs, err := client.ListOpenPullRequests(repo)
 	if err != nil {
-		fmt.Fprintf(errWriter, "Warning: failed to check open Weblate PRs: %v\n", err)
-	} else {
-		for _, pr := range openWeblatePRs {
-			summary.OpenWeblatePRs = append(summary.OpenWeblatePRs, openPullRequestURL(repo, pr))
-		}
-		addOpenPullRequests(openPRs, openWeblatePRs)
+		fmt.Fprintf(errWriter, "Warning: failed to check open PRs: %v\n", err)
+		return
 	}
 
-	for _, label := range []string{"verified", "testing"} {
-		prs, err := client.ListOpenPullRequestsByLabel(repo, label)
-		if err != nil {
-			fmt.Fprintf(errWriter, "Warning: failed to check open PRs with label %s: %v\n", label, err)
+	sort.SliceStable(openPRs, func(i, j int) bool {
+		return openPRs[i].Number < openPRs[j].Number
+	})
+
+	for _, openPR := range openPRs {
+		if openPR.Author.Login == "weblate" {
+			summary.OpenWeblatePRs = append(summary.OpenWeblatePRs, openPullRequestURL(repo, openPR))
+		}
+		if seenPRs[openPR.Number] {
 			continue
 		}
-		addOpenPullRequests(openPRs, prs)
-	}
-
-	for _, prNum := range sortedOpenPullRequestNumbers(openPRs) {
-		if seenPRs[prNum] {
+		if len(module_release.GetLinkedIssues(openPR.Body, summary.IssuesRepo)) == 0 {
 			continue
 		}
 
-		pr, err := client.GetPullRequest(repo, prNum)
+		pr, err := client.GetPullRequest(repo, openPR.Number)
 		if err != nil {
-			fmt.Fprintf(errWriter, "Warning: failed to get open PR %d: %v\n", prNum, err)
+			fmt.Fprintf(errWriter, "Warning: failed to get open PR %d: %v\n", openPR.Number, err)
 			continue
 		}
 
 		processPullRequest(errWriter, client, summary, repo, pr)
-		seenPRs[prNum] = true
+		seenPRs[openPR.Number] = true
 	}
-}
-
-func addOpenPullRequests(index map[int]github.OpenPullRequest, prs []github.OpenPullRequest) {
-	for _, pr := range prs {
-		if _, exists := index[pr.Number]; exists {
-			continue
-		}
-		index[pr.Number] = pr
-	}
-}
-
-func sortedOpenPullRequestNumbers(prs map[int]github.OpenPullRequest) []int {
-	numbers := make([]int, 0, len(prs))
-	for number := range prs {
-		numbers = append(numbers, number)
-	}
-	sort.Ints(numbers)
-	return numbers
 }
 
 func openPullRequestURL(repo string, pr github.OpenPullRequest) string {
@@ -211,20 +191,9 @@ func categorizePullRequest(pr *github.PullRequest) module_release.PRCategory {
 		return module_release.PRCategoryTranslation
 	case pr.User.Login == "renovate[bot]" && pr.Merged:
 		return module_release.PRCategoryRenovate
-	case hasPullRequestLabel(pr, "verified"):
-		return module_release.PRCategoryVerified
-	case strings.EqualFold(pr.State, "open") && hasPullRequestLabel(pr, "testing"):
-		return module_release.PRCategoryTesting
+	case strings.EqualFold(pr.State, "open"):
+		return module_release.PRCategoryGeneric
 	default:
 		return module_release.PRCategoryMerged
 	}
-}
-
-func hasPullRequestLabel(pr *github.PullRequest, name string) bool {
-	for _, label := range pr.Labels {
-		if label.Name == name {
-			return true
-		}
-	}
-	return false
 }

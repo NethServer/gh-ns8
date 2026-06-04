@@ -26,7 +26,7 @@ A GitHub CLI (`gh`) extension for automating NethServer 8 module release managem
 - Create releases with auto-generated release notes
 - Include linked issues from PRs in release notes
 - Check if a module is ready for release
-- Display PRs by verified, testing, renovate, translation, and merged status
+- Display PRs by renovate, translation, and merged type
 - Warn when open Weblate PRs are present
 - Comment on linked issues with release notifications
 - Remove pre-releases between stable releases
@@ -338,8 +338,6 @@ issues:
   - ⬛ Closed
 
 - **PR type:**
-  - ✅ Verified
-  - 🔨 Testing
   - 🤖 Renovate
   - 🌐 Translation
   - 🔀 Merged
@@ -371,15 +369,15 @@ PRs:
 
 ---
 PR status:       🟩 Open    🟪 Merged    ⬛ Closed
-PR type:         ✅ Verified    🔨 Testing    🤖 Renovate    🌐 Translation    🔀 Merged
+PR type:         🤖 Renovate    🌐 Translation    🔀 Merged
 Open PR state:   mergeable    blocked    unknown
 
 Issues:
-🟢   🚧 https://github.com/NethServer/dev/issues/101 (2) bug
-├─🟩 🔨 https://github.com/NethServer/ns8-module/pull/456 mergeable
-└─🟪 ✅ https://github.com/NethServer/ns8-module/pull/123 nethvoice
-🟣   ✅ https://github.com/NethServer/dev/issues/102 (1) enhancement
-└─🟩 🌐 https://github.com/NethServer/ns8-module/pull/100 unknown
+🟢   🚧 https://github.com/NethServer/dev/issues/101 bug
+├─🟩  https://github.com/NethServer/ns8-module/pull/456 mergeable
+└─🟪 🔀 https://github.com/NethServer/ns8-module/pull/123 nethvoice
+🟣   ✅ https://github.com/NethServer/dev/issues/102 enhancement
+└─🟩  https://github.com/NethServer/ns8-module/pull/100 unknown
 
 ---
 Issue status:    🟢 Open    🟣 Closed
@@ -391,15 +389,14 @@ https://github.com/NethServer/ns8-module/commit/abc123
 
 Weblate PRs are identified by author login `weblate`, while merged Renovate PRs
 are identified by author login `renovate[bot]`. Author-based categories have
-precedence over labels, so Weblate PRs remain in the translation category and
-merged Renovate PRs remain in the renovate category even if they also carry
-`testing` or `verified` labels. Open PRs are included when they have the
-`testing` or `verified` label, or when they are authored by Weblate. The PR
-list is shown as a single section sorted by PR status first (`open`, `merged`,
-`closed`) and by PR type second (`verified`, `testing`, `renovate`,
-`translation`, `merged`). When a PR links one or more issues, it is rendered
-only under those issues and is omitted from the top-level PR list. If open
-Weblate PRs exist, the command also prints the warning before the summary.
+precedence, so Weblate PRs remain in the translation category and merged
+Renovate PRs remain in the renovate category. Open PRs are scanned and included
+when they link one or more issues. The PR list is shown as a single section
+sorted by PR status first (`open`, `merged`, `closed`) and by PR type second
+(`renovate`, `translation`, `generic`, `merged`). When a PR links one or more
+issues, it is rendered only under those issues and is omitted from the top-level
+PR list. Open PR rows keep the PR type column blank while preserving spacing. If
+open Weblate PRs exist, the command also prints the warning before the summary.
 
 ## Migration from Bash
 

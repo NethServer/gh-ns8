@@ -387,41 +387,20 @@ func GetCurrentRepository() (string, error) {
 type OpenPullRequest struct {
 	Number int    `json:"number"`
 	URL    string `json:"url"`
+	Body   string `json:"body"`
+	Author struct {
+		Login string `json:"login"`
+	} `json:"author"`
 }
 
-// ListOpenPullRequestsByAuthor lists open PRs by a given author
-func (c *Client) ListOpenPullRequestsByAuthor(repo, author string) ([]OpenPullRequest, error) {
+// ListOpenPullRequests lists open PRs with enough metadata to detect linked issues.
+func (c *Client) ListOpenPullRequests(repo string) ([]OpenPullRequest, error) {
 	args := []string{
 		"pr", "list",
 		"--repo", repo,
-		"--author", author,
 		"--state", "open",
 		"--limit", "100",
-		"--json", "number,url",
-	}
-
-	stdout, _, err := gh.Exec(args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list open PRs: %w", err)
-	}
-
-	var prs []OpenPullRequest
-	if err := json.Unmarshal(stdout.Bytes(), &prs); err != nil {
-		return nil, fmt.Errorf("failed to parse open PRs: %w", err)
-	}
-
-	return prs, nil
-}
-
-// ListOpenPullRequestsByLabel lists open PRs by a given label
-func (c *Client) ListOpenPullRequestsByLabel(repo, label string) ([]OpenPullRequest, error) {
-	args := []string{
-		"pr", "list",
-		"--repo", repo,
-		"--label", label,
-		"--state", "open",
-		"--limit", "100",
-		"--json", "number,url",
+		"--json", "number,url,body,author",
 	}
 
 	stdout, _, err := gh.Exec(args...)

@@ -115,10 +115,10 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	summary.issueOrder = []int{7310, 7927}
 
 	output := captureStdout(t, summary.Display)
-	if !strings.Contains(output, "🟢   ✅ https://github.com/NethServer/dev/issues/7927 (3) nethvoice") {
+	if !strings.Contains(output, "🟢   ✅ https://github.com/NethServer/dev/issues/7927 nethvoice") {
 		t.Fatalf("missing legacy top-level formatting in output:\n%s", output)
 	}
-	if !strings.Contains(output, "└─🟢 🚧 https://github.com/NethServer/dev/issues/7878 (2) nethvoice") {
+	if !strings.Contains(output, "└─🟢 🚧 https://github.com/NethServer/dev/issues/7878 nethvoice") {
 		t.Fatalf("missing legacy child formatting in output:\n%s", output)
 	}
 }
@@ -126,15 +126,11 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 	mergeable := true
-	blocked := false
 
-	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(15, "closed", true, nil, "", false), PRCategoryVerified)
-	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(10, "open", false, &mergeable, "clean", false, "verified", "nethvoice"), PRCategoryVerified)
-	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(18, "closed", true, nil, "", false), PRCategoryTesting)
-	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(11, "open", false, &blocked, "dirty", false, "testing"), PRCategoryTesting)
 	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(12, "closed", true, nil, "", false, "dependencies"), PRCategoryRenovate)
 	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(13, "open", false, nil, "unknown", false), PRCategoryTranslation)
 	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(14, "closed", true, nil, "", false), PRCategoryMerged)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(10, "open", false, &mergeable, "clean", false, "verified", "nethvoice"), PRCategoryGeneric)
 
 	output := captureStdout(t, summary.Display)
 	if !strings.Contains(output, "PRs:") {
@@ -153,11 +149,8 @@ func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 	}
 
 	wantOrder := []string{
-		"🟩   ✅ https://github.com/NethServer/ns8-test/pull/10 mergeable nethvoice",
-		"🟩   🔨 https://github.com/NethServer/ns8-test/pull/11 blocked",
-		"🟩   🌐 https://github.com/NethServer/ns8-test/pull/13 unknown",
-		"🟪   ✅ https://github.com/NethServer/ns8-test/pull/15",
-		"🟪   🔨 https://github.com/NethServer/ns8-test/pull/18",
+		"🟩    https://github.com/NethServer/ns8-test/pull/13 unknown",
+		"🟩    https://github.com/NethServer/ns8-test/pull/10 mergeable nethvoice",
 		"🟪   🤖 https://github.com/NethServer/ns8-test/pull/12 dependencies",
 		"🟪   🔀 https://github.com/NethServer/ns8-test/pull/14",
 	}
@@ -185,7 +178,7 @@ func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
 	}
 	issue.LinkedPRs = []PRInfo{
 		newPRInfo("NethServer/ns8-test", makeDisplayPullRequest(11, "closed", true, nil, "", false), PRCategoryMerged),
-		newPRInfo("NethServer/ns8-test", makeDisplayPullRequest(10, "open", false, &mergeable, "clean", false), PRCategoryVerified),
+		newPRInfo("NethServer/ns8-test", makeDisplayPullRequest(10, "open", false, &mergeable, "clean", false), PRCategoryGeneric),
 	}
 	summary.Issues[100] = issue
 	summary.issueOrder = []int{100}
@@ -195,8 +188,8 @@ func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
 		t.Fatalf("linked PRs should not create a top-level PR section:\n%s", output)
 	}
 	for _, want := range []string{
-		"🟢   🔨 https://github.com/NethServer/dev/issues/100 (2)",
-		"├─🟩 ✅ https://github.com/NethServer/ns8-test/pull/10 mergeable",
+		"🟢   🔨 https://github.com/NethServer/dev/issues/100",
+		"├─🟩  https://github.com/NethServer/ns8-test/pull/10 mergeable",
 		"└─🟪 🔀 https://github.com/NethServer/ns8-test/pull/11",
 	} {
 		if !strings.Contains(output, want) {
@@ -253,7 +246,7 @@ func TestDisplayReadyRequiresNoRemainingOrBlockedPRs(t *testing.T) {
 
 	withBlocked := NewCheckSummary("NethServer/dev")
 	withBlocked.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
-	withBlocked.TestingPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/21", Mergeability: PRBlocked}}
+	withBlocked.Issues[1].LinkedPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/21", Mergeability: PRBlocked}}
 	output = captureStdout(t, withBlocked.Display)
 	if strings.Contains(output, "All checks passed! Ready to release.") {
 		t.Fatalf("ready message should be hidden with blocked open PRs:\n%s", output)

@@ -19,8 +19,8 @@ type fakeCheckSummaryClient struct {
 	issueErrs    map[int]error
 	parentIssues map[int]int
 	parentErrs   map[int]error
-	openByAuthor map[string][]ghgithub.OpenPullRequest
-	openByLabel  map[string][]ghgithub.OpenPullRequest
+	openPRs      []ghgithub.OpenPullRequest
+	openPRsErr   error
 }
 
 func (f fakeCheckSummaryClient) GetPullRequestsForCommit(_ string, sha string) ([]int, error) {
@@ -51,12 +51,11 @@ func (f fakeCheckSummaryClient) GetParentIssueNumber(_ string, issueNumber int) 
 	return f.parentIssues[issueNumber], nil
 }
 
-func (f fakeCheckSummaryClient) ListOpenPullRequestsByAuthor(_ string, author string) ([]ghgithub.OpenPullRequest, error) {
-	return f.openByAuthor[author], nil
-}
-
-func (f fakeCheckSummaryClient) ListOpenPullRequestsByLabel(_ string, label string) ([]ghgithub.OpenPullRequest, error) {
-	return f.openByLabel[label], nil
+func (f fakeCheckSummaryClient) ListOpenPullRequests(_ string) ([]ghgithub.OpenPullRequest, error) {
+	if f.openPRsErr != nil {
+		return nil, f.openPRsErr
+	}
+	return f.openPRs, nil
 }
 
 func TestPopulateCheckSummaryCategorizesPRsAndOrphans(t *testing.T) {
@@ -154,14 +153,11 @@ func TestPopulateCheckSummaryCategorizesPRsAndOrphans(t *testing.T) {
 func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 	var errBuf bytes.Buffer
 	mergeable := true
-	blocked := false
 	client := fakeCheckSummaryClient{
 		prs: map[int]*ghgithub.PullRequest{
-			6:  makeTestPullRequest(6, "Translation update", "weblate", "open", false, "verified"),
 			7:  makeTestPullRequest(7, "Refs NethServer/dev#30", "", "open", false, "verified"),
-			8:  makeTestPullRequest(8, "Testing change", "", "open", false, "testing"),
-			9:  makeTestPullRequest(9, "Renovate testing", "renovate[bot]", "open", false, "testing"),
-			10: makeTestPullRequest(10, "Already handled", "", "open", false, "verified"),
+			9:  makeTestPullRequest(9, "Refs NethServer/dev#31", "renovate[bot]", "open", false, "testing"),
+			10: makeTestPullRequest(10, "Refs NethServer/dev#32", "", "open", false, "verified"),
 		},
 		issues: map[int]*ghgithub.Issue{
 			30: {
@@ -172,27 +168,24 @@ func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 					{Name: "verified"},
 				},
 			},
-		},
-		openByAuthor: map[string][]ghgithub.OpenPullRequest{
-			"weblate": {
-				{Number: 6, URL: "https://github.com/NethServer/ns8-mail/pull/6"},
+			31: {
+				State: "OPEN",
+				Labels: []struct {
+					Name string `json:"name"`
+				}{
+					{Name: "testing"},
+				},
 			},
 		},
-		openByLabel: map[string][]ghgithub.OpenPullRequest{
-			"verified": {
-				{Number: 6, URL: "https://github.com/NethServer/ns8-mail/pull/6"},
-				{Number: 7, URL: "https://github.com/NethServer/ns8-mail/pull/7"},
-				{Number: 10, URL: "https://github.com/NethServer/ns8-mail/pull/10"},
-			},
-			"testing": {
-				{Number: 8, URL: "https://github.com/NethServer/ns8-mail/pull/8"},
-				{Number: 9, URL: "https://github.com/NethServer/ns8-mail/pull/9"},
-			},
+		openPRs: []ghgithub.OpenPullRequest{
+			makeOpenPullRequest(6, "Translation update", "weblate"),
+			makeOpenPullRequest(7, "Refs NethServer/dev#30", ""),
+			makeOpenPullRequest(8, "Unlinked open PR", ""),
+			makeOpenPullRequest(9, "Refs NethServer/dev#31", "renovate[bot]"),
+			makeOpenPullRequest(10, "Refs NethServer/dev#32", ""),
 		},
 	}
 	client.prs[7].MergeableState = "unknown"
-	client.prs[8].Mergeable = &blocked
-	client.prs[8].MergeableState = "dirty"
 	client.prs[9].Mergeable = &mergeable
 	client.prs[9].MergeableState = "clean"
 
@@ -205,23 +198,29 @@ func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 	if len(summary.OpenWeblatePRs) != 1 || summary.OpenWeblatePRs[0] != "https://github.com/NethServer/ns8-mail/pull/6" {
 		t.Fatalf("OpenWeblatePRs = %v, want Weblate warning URL", summary.OpenWeblatePRs)
 	}
-	if len(summary.TranslationPRs) != 1 || summary.TranslationPRs[0].Number != 6 {
-		t.Fatalf("TranslationPRs = %v, want open Weblate PR", summary.TranslationPRs)
-	}
-	if len(summary.VerifiedPRs) != 0 {
-		t.Fatalf("VerifiedPRs = %v, want linked verified PR removed from top list", summary.VerifiedPRs)
-	}
-	if len(summary.TestingPRs) != 2 || summary.TestingPRs[0].Number != 8 || summary.TestingPRs[1].Number != 9 {
-		t.Fatalf("TestingPRs = %v, want open testing PRs", summary.TestingPRs)
+	if len(summary.TranslationPRs) != 0 {
+		t.Fatalf("TranslationPRs = %v, want unlinked Weblate PR only in warning", summary.TranslationPRs)
 	}
 	if len(summary.RenovatePRs) != 0 {
 		t.Fatalf("RenovatePRs = %v, want no open renovate PRs in renovate bucket", summary.RenovatePRs)
+	}
+	if len(summary.MergedPRs) != 0 {
+		t.Fatalf("MergedPRs = %v, want no unlinked open PRs", summary.MergedPRs)
 	}
 	if summary.Issues[30] == nil || summary.Issues[30].Progress != internalmodule.EmojiVerified {
 		t.Fatalf("Issues[30] = %v, want processed linked issue", summary.Issues[30])
 	}
 	if len(summary.Issues[30].LinkedPRs) != 1 || summary.Issues[30].LinkedPRs[0].Number != 7 {
 		t.Fatalf("Issues[30].LinkedPRs = %v, want linked PR 7 under issue", summary.Issues[30].LinkedPRs)
+	}
+	if summary.Issues[31] == nil || summary.Issues[31].Progress != internalmodule.EmojiTesting {
+		t.Fatalf("Issues[31] = %v, want processed linked issue", summary.Issues[31])
+	}
+	if len(summary.Issues[31].LinkedPRs) != 1 || summary.Issues[31].LinkedPRs[0].Number != 9 {
+		t.Fatalf("Issues[31].LinkedPRs = %v, want linked PR 9 under issue", summary.Issues[31].LinkedPRs)
+	}
+	if summary.Issues[32] != nil {
+		t.Fatalf("Issues[32] = %v, want already seen open PR skipped", summary.Issues[32])
 	}
 }
 
@@ -242,14 +241,14 @@ func TestCategorizePullRequestPrecedence(t *testing.T) {
 			want: internalmodule.PRCategoryRenovate,
 		},
 		{
-			name: "open renovate can use testing label",
+			name: "open renovate defaults to generic",
 			pr:   makeTestPullRequest(3, "", "renovate[bot]", "open", false, "testing"),
-			want: internalmodule.PRCategoryTesting,
+			want: internalmodule.PRCategoryGeneric,
 		},
 		{
-			name: "verified label wins over testing",
+			name: "verified and testing labels are ignored",
 			pr:   makeTestPullRequest(4, "", "", "open", false, "testing", "verified"),
-			want: internalmodule.PRCategoryVerified,
+			want: internalmodule.PRCategoryGeneric,
 		},
 		{
 			name: "merged testing label stays merged",
@@ -284,5 +283,15 @@ func makeTestPullRequest(number int, body, author, state string, merged bool, la
 			Name string `json:"name"`
 		}{Name: label})
 	}
+	return pr
+}
+
+func makeOpenPullRequest(number int, body, author string) ghgithub.OpenPullRequest {
+	pr := ghgithub.OpenPullRequest{
+		Number: number,
+		URL:    "https://github.com/NethServer/ns8-mail/pull/" + strconv.Itoa(number),
+		Body:   body,
+	}
+	pr.Author.Login = author
 	return pr
 }
