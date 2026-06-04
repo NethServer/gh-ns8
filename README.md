@@ -26,7 +26,7 @@ A GitHub CLI (`gh`) extension for automating NethServer 8 module release managem
 - Create releases with auto-generated release notes
 - Include linked issues from PRs in release notes
 - Check if a module is ready for release
-- Separate merged Weblate and Renovate PRs in check output
+- Display PRs by verified, testing, renovate, translation, and merged status
 - Warn when open Weblate PRs are present
 - Comment on linked issues with release notifications
 - Remove pre-releases between stable releases
@@ -321,16 +321,28 @@ gh ns8 module-release check --repo <repo-name>
 
 The `check` command outputs a summary of:
 
-- PRs without linked issues
-- Merged Weblate PRs
-- Merged Renovate PRs
+- A single PR list grouped by type and ordered by status
+- Open PR mergeability (`mergeable`, `blocked`, or `unknown`)
 - Open Weblate PR warnings
 - Commits outside PRs (orphan commits)
 - Issues with their status and progress
 
 ### Emojis Used
 
-The `check` command uses emojis to indicate the status and progress of issues:
+The `check` command uses emojis to indicate the status and progress of PRs and
+issues:
+
+- **PR status:**
+  - 🟢 Open
+  - 🟣 Merged
+  - ⚫ Closed
+
+- **PR type:**
+  - ✅ Verified
+  - 🔨 Testing
+  - 🤖 Renovate
+  - 🌐 Translation
+  - 🔀 Merged
 
 - **Issue status:**
   - 🟢 Open
@@ -353,33 +365,41 @@ https://github.com/NethServer/ns8-module/pull/100
 
 Summary:
 --------
-PRs without linked issues:
-https://github.com/NethServer/ns8-module/pull/123
-https://github.com/NethServer/ns8-module/pull/456
+PRs:
+🟢   🔨 https://github.com/NethServer/ns8-module/pull/456 mergeable
+🟢   🌐 https://github.com/NethServer/ns8-module/pull/100 unknown
+🟣   ✅ https://github.com/NethServer/ns8-module/pull/123 nethvoice
+🟣   🤖 https://github.com/NethServer/ns8-module/pull/790 dependencies
+🟣   🔀 https://github.com/NethServer/ns8-module/pull/789
 
-Weblate PRs:
-https://github.com/NethServer/ns8-module/pull/789
-
-Renovate PRs:
-https://github.com/NethServer/ns8-module/pull/790
-
-Commits outside PRs:
-https://github.com/NethServer/ns8-module/commit/abc123
+---
+PR status:       🟢 Open    🟣 Merged    ⚫ Closed
+PR type:         ✅ Verified    🔨 Testing    🤖 Renovate    🌐 Translation    🔀 Merged
+Open PR state:   mergeable    blocked    unknown
 
 Issues:
-🟢 🚧 https://github.com/NethServer/dev/issues/101 (2) bug
-🟣 ✅ https://github.com/NethServer/dev/issues/102 (1) enhancement
+🟢   🚧 https://github.com/NethServer/dev/issues/101 (2) bug
+🟣   ✅ https://github.com/NethServer/dev/issues/102 (1) enhancement
 └─🟢 🔨 https://github.com/NethServer/dev/issues/103 (1) documentation
 
 ---
 Issue status:    🟢 Open    🟣 Closed
 Progress status: 🚧 In Progress    🔨 Testing    ✅ Verified
+
+Commits outside PRs:
+https://github.com/NethServer/ns8-module/commit/abc123
 ```
 
-Weblate PRs are identified by author login `weblate`, while Renovate PRs are
-identified by author login `renovate[bot]`. Weblate and Renovate PRs are shown
-separately from the generic "PRs without linked issues" section. If open
-Weblate PRs exist, the command prints a warning before the summary.
+Weblate PRs are identified by author login `weblate`, while merged Renovate PRs
+are identified by author login `renovate[bot]`. Author-based categories have
+precedence over labels, so Weblate PRs remain in the translation category and
+merged Renovate PRs remain in the renovate category even if they also carry
+`testing` or `verified` labels. Open PRs are included when they have the
+`testing` or `verified` label, or when they are authored by Weblate. The PR
+list is shown as a single section sorted by PR status first (`open`, `merged`,
+`closed`) and by PR type second (`verified`, `testing`, `renovate`,
+`translation`, `merged`). If open Weblate PRs exist, the command also prints
+the warning before the summary.
 
 ## Migration from Bash
 

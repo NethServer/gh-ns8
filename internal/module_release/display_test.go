@@ -123,34 +123,109 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	}
 }
 
-func TestDisplayShowsWeblatePRs(t *testing.T) {
+func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
-	summary.WeblatePRs = []string{
-		"https://github.com/NethServer/ns8-test/pull/10",
-		"https://github.com/NethServer/ns8-test/pull/11",
-	}
+	mergeable := true
+	blocked := false
+
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(15, "closed", true, nil, "", false), PRCategoryVerified)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(10, "open", false, &mergeable, "clean", false, "verified", "nethvoice"), PRCategoryVerified)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(18, "closed", true, nil, "", false), PRCategoryTesting)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(11, "open", false, &blocked, "dirty", false, "testing"), PRCategoryTesting)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(12, "closed", true, nil, "", false, "dependencies"), PRCategoryRenovate)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(13, "open", false, nil, "unknown", false), PRCategoryTranslation)
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(14, "closed", true, nil, "", false), PRCategoryMerged)
 
 	output := captureStdout(t, summary.Display)
-	if !strings.Contains(output, "Weblate PRs:") {
-		t.Fatalf("missing Weblate PRs header in output:\n%s", output)
+	if !strings.Contains(output, "PRs:") {
+		t.Fatalf("missing PRs header in output:\n%s", output)
 	}
-	if !strings.Contains(output, "pull/10") || !strings.Contains(output, "pull/11") {
-		t.Fatalf("missing Weblate PR URLs in output:\n%s", output)
+	for _, unwanted := range []string{
+		"Verified PRs:",
+		"Testing PRs:",
+		"Renovate PRs:",
+		"Translation PRs:",
+		"Merged PRs:",
+	} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("unexpected subgroup header %q in output:\n%s", unwanted, output)
+		}
+	}
+
+	wantOrder := []string{
+		"🟢   ✅ https://github.com/NethServer/ns8-test/pull/10 mergeable nethvoice",
+		"🟢   🔨 https://github.com/NethServer/ns8-test/pull/11 blocked",
+		"🟢   🌐 https://github.com/NethServer/ns8-test/pull/13 unknown",
+		"🟣   ✅ https://github.com/NethServer/ns8-test/pull/15",
+		"🟣   🔨 https://github.com/NethServer/ns8-test/pull/18",
+		"🟣   🤖 https://github.com/NethServer/ns8-test/pull/12 dependencies",
+		"🟣   🔀 https://github.com/NethServer/ns8-test/pull/14",
+	}
+	lastIndex := -1
+	for _, want := range wantOrder {
+		index := strings.Index(output, want)
+		if index == -1 {
+			t.Fatalf("missing %q in output:\n%s", want, output)
+		}
+		if index <= lastIndex {
+			t.Fatalf("pull request output is not in expected order:\n%s", output)
+		}
+		lastIndex = index
 	}
 }
 
-func TestDisplayShowsRenovatePRs(t *testing.T) {
+func TestDisplayPlacesLegendsUnderTheirLists(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
-	summary.RenovatePRs = []string{
-		"https://github.com/NethServer/ns8-test/pull/20",
-	}
+	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(10, "closed", true, nil, "", false), PRCategoryMerged)
+	summary.Issues[1] = &IssueInfo{Number: 1, Status: EmojiOpenIssue, Progress: EmojiInProgress}
 
 	output := captureStdout(t, summary.Display)
-	if !strings.Contains(output, "Renovate PRs:") {
-		t.Fatalf("missing Renovate PRs header in output:\n%s", output)
+	prIndex := strings.Index(output, "https://github.com/NethServer/ns8-test/pull/10")
+	prLegendIndex := strings.Index(output, "PR status:")
+	issuesIndex := strings.Index(output, "Issues:")
+	issueIndex := strings.Index(output, "https://github.com/NethServer/dev/issues/1")
+	issueLegendIndex := strings.Index(output, "Issue status:")
+	if prIndex == -1 || prLegendIndex == -1 || issuesIndex == -1 || issueIndex == -1 || issueLegendIndex == -1 {
+		t.Fatalf("missing PR, issue, or legend sections in output:\n%s", output)
 	}
-	if !strings.Contains(output, "pull/20") {
-		t.Fatalf("missing Renovate PR URL in output:\n%s", output)
+	if !(prIndex < prLegendIndex && prLegendIndex < issuesIndex) {
+		t.Fatalf("PR legend should appear after PRs and before issues:\n%s", output)
+	}
+	if !(issueIndex < issueLegendIndex) {
+		t.Fatalf("issue legend should appear after issue list:\n%s", output)
+	}
+	prGap := output[prIndex:prLegendIndex]
+	if strings.Contains(prGap, "\n\n") {
+		t.Fatalf("unexpected blank line between PR list and PR legend:\n%s", output)
+	}
+	gap := output[strings.Index(output, "Open PR state:"):issuesIndex]
+	if !strings.Contains(gap, "\n\n") {
+		t.Fatalf("expected blank line between PR legend and issues:\n%s", output)
+	}
+}
+
+func TestDisplayReadyRequiresNoRemainingOrBlockedPRs(t *testing.T) {
+	ready := NewCheckSummary("NethServer/dev")
+	ready.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
+	output := captureStdout(t, ready.Display)
+	if !strings.Contains(output, "All checks passed! Ready to release.") {
+		t.Fatalf("missing ready message in output:\n%s", output)
+	}
+
+	withRemaining := NewCheckSummary("NethServer/dev")
+	withRemaining.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
+	withRemaining.MergedPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/20"}}
+	output = captureStdout(t, withRemaining.Display)
+	if strings.Contains(output, "All checks passed! Ready to release.") {
+		t.Fatalf("ready message should be hidden with remaining PRs:\n%s", output)
+	}
+
+	withBlocked := NewCheckSummary("NethServer/dev")
+	withBlocked.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
+	withBlocked.TestingPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/21", Mergeability: PRBlocked}}
+	output = captureStdout(t, withBlocked.Display)
+	if strings.Contains(output, "All checks passed! Ready to release.") {
+		t.Fatalf("ready message should be hidden with blocked open PRs:\n%s", output)
 	}
 }
 
@@ -173,15 +248,41 @@ func TestDisplayHidesEmptySections(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 
 	output := captureStdout(t, summary.Display)
-	if strings.Contains(output, "Weblate PRs:") {
-		t.Fatalf("should not show Weblate section when empty:\n%s", output)
+	if strings.Contains(output, "PRs:") {
+		t.Fatalf("should not show PR section when empty:\n%s", output)
+	}
+	if strings.Contains(output, "PR status:") {
+		t.Fatalf("should not show PR legend when PR section is empty:\n%s", output)
 	}
 	if strings.Contains(output, "Renovate PRs:") {
 		t.Fatalf("should not show Renovate section when empty:\n%s", output)
 	}
+	if strings.Contains(output, "Translation PRs:") {
+		t.Fatalf("should not show Translation section when empty:\n%s", output)
+	}
 	if strings.Contains(output, "Open Weblate PRs detected:") {
 		t.Fatalf("should not show open Weblate warning when empty:\n%s", output)
 	}
+}
+
+func makeDisplayPullRequest(number int, state string, merged bool, mergeable *bool, mergeableState string, draft bool, labels ...string) *ghgithub.PullRequest {
+	pr := &ghgithub.PullRequest{
+		Number:         number,
+		State:          state,
+		Merged:         merged,
+		Mergeable:      mergeable,
+		MergeableState: mergeableState,
+		Draft:          draft,
+	}
+	pr.Labels = make([]struct {
+		Name string `json:"name"`
+	}, 0, len(labels))
+	for _, label := range labels {
+		pr.Labels = append(pr.Labels, struct {
+			Name string `json:"name"`
+		}{Name: label})
+	}
+	return pr
 }
 
 func captureStdout(t *testing.T, fn func()) string {

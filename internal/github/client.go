@@ -40,8 +40,8 @@ type Repository struct {
 	Owner struct {
 		Login string `json:"login"`
 	} `json:"owner"`
-	Name              string `json:"name"`
-	DefaultBranchRef  struct {
+	Name             string `json:"name"`
+	DefaultBranchRef struct {
 		Name string `json:"name"`
 	} `json:"defaultBranchRef"`
 }
@@ -131,7 +131,7 @@ func (c *Client) ListReleases(repo string, limit int, excludePreReleases bool) (
 	if excludePreReleases {
 		args = append(args, "--exclude-pre-releases")
 	}
-	
+
 	stdout, _, err := gh.Exec(args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases: %w", err)
@@ -148,7 +148,7 @@ func (c *Client) ListReleases(repo string, limit int, excludePreReleases bool) (
 // ViewRelease gets details about a specific release
 func (c *Client) ViewRelease(repo, tag string) (*Release, error) {
 	args := []string{"release", "view", tag, "--repo", repo, "--json", "tagName,name,isPrerelease,createdAt"}
-	
+
 	stdout, _, err := gh.Exec(args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to view release: %w", err)
@@ -221,9 +221,15 @@ func (c *Client) DeleteRelease(repo, tag string) error {
 
 // PullRequest represents a PR
 type PullRequest struct {
-	Number int    `json:"number"`
-	Body   string `json:"body"`
-	User   struct {
+	Number         int    `json:"number"`
+	HTMLURL        string `json:"html_url"`
+	State          string `json:"state"`
+	Body           string `json:"body"`
+	Merged         bool   `json:"merged"`
+	Mergeable      *bool  `json:"mergeable"`
+	MergeableState string `json:"mergeable_state"`
+	Draft          bool   `json:"draft"`
+	User           struct {
 		Login string `json:"login"`
 	} `json:"user"`
 	Labels []struct {
@@ -390,6 +396,31 @@ func (c *Client) ListOpenPullRequestsByAuthor(repo, author string) ([]OpenPullRe
 		"--repo", repo,
 		"--author", author,
 		"--state", "open",
+		"--limit", "100",
+		"--json", "number,url",
+	}
+
+	stdout, _, err := gh.Exec(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list open PRs: %w", err)
+	}
+
+	var prs []OpenPullRequest
+	if err := json.Unmarshal(stdout.Bytes(), &prs); err != nil {
+		return nil, fmt.Errorf("failed to parse open PRs: %w", err)
+	}
+
+	return prs, nil
+}
+
+// ListOpenPullRequestsByLabel lists open PRs by a given label
+func (c *Client) ListOpenPullRequestsByLabel(repo, label string) ([]OpenPullRequest, error) {
+	args := []string{
+		"pr", "list",
+		"--repo", repo,
+		"--label", label,
+		"--state", "open",
+		"--limit", "100",
 		"--json", "number,url",
 	}
 

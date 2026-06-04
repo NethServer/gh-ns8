@@ -2,6 +2,7 @@ package module_release
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,19 @@ const (
 	EmojiInProgress  = "🚧"
 	EmojiTesting     = "🔨"
 	EmojiVerified    = "✅"
+	EmojiOpenPR      = "🟢"
+	EmojiMergedPR    = "🟣"
+	EmojiClosedPR    = "⚫"
+	EmojiRenovate    = "🤖"
+	EmojiTranslation = "🌐"
+	EmojiMerged      = "🔀"
+)
+
+// Open PR mergeability values
+const (
+	PRMergeable = "mergeable"
+	PRBlocked   = "blocked"
+	PRUnknown   = "unknown"
 )
 
 // IssueInfo holds display information about an issue
@@ -38,11 +52,34 @@ type IssueInfo struct {
 	Children     []int  // Child issue numbers
 }
 
+// PRCategory identifies the display bucket for a PR.
+type PRCategory int
+
+const (
+	PRCategoryVerified PRCategory = iota
+	PRCategoryTesting
+	PRCategoryRenovate
+	PRCategoryTranslation
+	PRCategoryMerged
+)
+
+// PRInfo holds display information about a pull request.
+type PRInfo struct {
+	Number       int
+	URL          string
+	Status       string
+	Progress     string
+	Mergeability string
+	Labels       string
+}
+
 // CheckSummary holds all information for the check command display
 type CheckSummary struct {
-	UnlinkedPRs    []string
-	WeblatePRs     []string
-	RenovatePRs    []string
+	VerifiedPRs    []PRInfo
+	TestingPRs     []PRInfo
+	RenovatePRs    []PRInfo
+	TranslationPRs []PRInfo
+	MergedPRs      []PRInfo
 	OpenWeblatePRs []string
 	OrphanCommits  []string
 	Issues         map[int]*IssueInfo
@@ -61,6 +98,103 @@ func NewCheckSummary(issuesRepo string) *CheckSummary {
 		Issues:     make(map[int]*IssueInfo),
 		IssuesRepo: issuesRepo,
 	}
+}
+
+// AddPullRequest adds a pull request to the requested display category.
+func (cs *CheckSummary) AddPullRequest(repo string, pr *github.PullRequest, category PRCategory) {
+	info := newPRInfo(repo, pr, category)
+	switch category {
+	case PRCategoryVerified:
+		cs.VerifiedPRs = append(cs.VerifiedPRs, info)
+	case PRCategoryTesting:
+		cs.TestingPRs = append(cs.TestingPRs, info)
+	case PRCategoryRenovate:
+		cs.RenovatePRs = append(cs.RenovatePRs, info)
+	case PRCategoryTranslation:
+		cs.TranslationPRs = append(cs.TranslationPRs, info)
+	default:
+		cs.MergedPRs = append(cs.MergedPRs, info)
+	}
+}
+
+func newPRInfo(repo string, pr *github.PullRequest, category PRCategory) PRInfo {
+	return PRInfo{
+		Number:       pr.Number,
+		URL:          pullRequestURL(repo, pr),
+		Status:       pullRequestStatus(pr),
+		Progress:     pullRequestProgress(category),
+		Mergeability: pullRequestMergeability(pr),
+		Labels:       filteredPullRequestLabels(pr),
+	}
+}
+
+func pullRequestURL(repo string, pr *github.PullRequest) string {
+	if pr.HTMLURL != "" {
+		return pr.HTMLURL
+	}
+	return fmt.Sprintf("https://github.com/%s/pull/%d", repo, pr.Number)
+}
+
+func pullRequestStatus(pr *github.PullRequest) string {
+	if pr.Merged {
+		return EmojiMergedPR
+	}
+	if strings.EqualFold(pr.State, "open") {
+		return EmojiOpenPR
+	}
+	return EmojiClosedPR
+}
+
+func pullRequestProgress(category PRCategory) string {
+	switch category {
+	case PRCategoryVerified:
+		return EmojiVerified
+	case PRCategoryTesting:
+		return EmojiTesting
+	case PRCategoryRenovate:
+		return EmojiRenovate
+	case PRCategoryTranslation:
+		return EmojiTranslation
+	default:
+		return EmojiMerged
+	}
+}
+
+func pullRequestMergeability(pr *github.PullRequest) string {
+	if !strings.EqualFold(pr.State, "open") {
+		return ""
+	}
+
+	state := strings.ToLower(pr.MergeableState)
+	if pr.Draft || state == "draft" {
+		return PRBlocked
+	}
+	if pr.Mergeable == nil || state == "" || state == "unknown" {
+		return PRUnknown
+	}
+	if !*pr.Mergeable {
+		return PRBlocked
+	}
+
+	switch state {
+	case "clean", "has_hooks":
+		return PRMergeable
+	case "blocked", "dirty", "behind", "unstable":
+		return PRBlocked
+	default:
+		return PRUnknown
+	}
+}
+
+func filteredPullRequestLabels(pr *github.PullRequest) string {
+	var labelNames []string
+	for _, label := range pr.Labels {
+		if label.Name == "verified" || label.Name == "testing" {
+			continue
+		}
+		labelNames = append(labelNames, label.Name)
+	}
+	return strings.Join(labelNames, " ")
 }
 
 // ProcessIssue processes an issue and adds it to the summary
@@ -269,39 +403,9 @@ func (cs *CheckSummary) Display() {
 	fmt.Println("Summary:")
 	fmt.Println("--------")
 
-	// Unlinked PRs
-	if len(cs.UnlinkedPRs) > 0 {
-		fmt.Printf("%sPRs without linked issues:%s\n", ColorYellow, ColorReset)
-		for _, pr := range cs.UnlinkedPRs {
-			fmt.Println(pr)
-		}
-		fmt.Println()
-	}
-
-	// Weblate PRs
-	if len(cs.WeblatePRs) > 0 {
-		fmt.Printf("%sWeblate PRs:%s\n", ColorCyan, ColorReset)
-		for _, pr := range cs.WeblatePRs {
-			fmt.Println(pr)
-		}
-		fmt.Println()
-	}
-
-	// Renovate PRs
-	if len(cs.RenovatePRs) > 0 {
-		fmt.Printf("%sRenovate PRs:%s\n", ColorCyan, ColorReset)
-		for _, pr := range cs.RenovatePRs {
-			fmt.Println(pr)
-		}
-		fmt.Println()
-	}
-
-	// Orphan commits
-	if len(cs.OrphanCommits) > 0 {
-		fmt.Printf("%sCommits outside PRs:%s\n", ColorMagenta, ColorReset)
-		for _, commit := range cs.OrphanCommits {
-			fmt.Println(commit)
-		}
+	cs.displayPullRequests()
+	if cs.hasPullRequests() {
+		cs.displayPullRequestLegend()
 		fmt.Println()
 	}
 
@@ -311,33 +415,152 @@ func (cs *CheckSummary) Display() {
 	for _, info := range cs.orderedTopLevelIssues() {
 		cs.displayIssue(info)
 	}
+	cs.displayIssueLegend()
 
-	// Check if all verified
-	allVerified := true
+	// Orphan commits
+	if len(cs.OrphanCommits) > 0 {
+		fmt.Println()
+		fmt.Printf("%sCommits outside PRs:%s\n", ColorMagenta, ColorReset)
+		for _, commit := range cs.OrphanCommits {
+			fmt.Println(commit)
+		}
+	}
+
+	if len(cs.MergedPRs) == 0 && !cs.hasBlockedOpenPullRequests() && cs.allIssuesVerified() {
+		fmt.Println()
+		fmt.Printf("%s✅ All checks passed! Ready to release.%s\n", ColorGreen, ColorReset)
+	}
+}
+
+func (cs *CheckSummary) displayPullRequests() {
+	if !cs.hasPullRequests() {
+		return
+	}
+
+	fmt.Printf("%sPRs:%s\n", ColorBold, ColorReset)
+	for _, pr := range cs.orderedPullRequests() {
+		displayPullRequest(pr)
+	}
+}
+
+func displayPullRequest(info PRInfo) {
+	details := make([]string, 0, 2)
+	if info.Mergeability != "" {
+		details = append(details, info.Mergeability)
+	}
+	if info.Labels != "" {
+		details = append(details, info.Labels)
+	}
+
+	suffix := ""
+	if len(details) > 0 {
+		suffix = " " + strings.Join(details, " ")
+	}
+
+	fmt.Printf("%s   %s %s%s\n",
+		info.Status,
+		info.Progress,
+		info.URL,
+		suffix)
+}
+
+func (cs *CheckSummary) hasPullRequests() bool {
+	return len(cs.VerifiedPRs) > 0 ||
+		len(cs.TestingPRs) > 0 ||
+		len(cs.RenovatePRs) > 0 ||
+		len(cs.TranslationPRs) > 0 ||
+		len(cs.MergedPRs) > 0
+}
+
+func (cs *CheckSummary) hasBlockedOpenPullRequests() bool {
+	for _, pr := range cs.allPullRequests() {
+		if pr.Mergeability == PRBlocked {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *CheckSummary) allPullRequests() []PRInfo {
+	prs := make([]PRInfo, 0,
+		len(cs.VerifiedPRs)+
+			len(cs.TestingPRs)+
+			len(cs.RenovatePRs)+
+			len(cs.TranslationPRs)+
+			len(cs.MergedPRs))
+	prs = append(prs, cs.VerifiedPRs...)
+	prs = append(prs, cs.TestingPRs...)
+	prs = append(prs, cs.RenovatePRs...)
+	prs = append(prs, cs.TranslationPRs...)
+	prs = append(prs, cs.MergedPRs...)
+	return prs
+}
+
+func (cs *CheckSummary) orderedPullRequests() []PRInfo {
+	ordered := make([]PRInfo, 0,
+		len(cs.VerifiedPRs)+
+			len(cs.TestingPRs)+
+			len(cs.RenovatePRs)+
+			len(cs.TranslationPRs)+
+			len(cs.MergedPRs))
+
+	groups := [][]PRInfo{
+		sortPullRequestGroup(cs.VerifiedPRs),
+		sortPullRequestGroup(cs.TestingPRs),
+		sortPullRequestGroup(cs.RenovatePRs),
+		sortPullRequestGroup(cs.TranslationPRs),
+		sortPullRequestGroup(cs.MergedPRs),
+	}
+
+	for _, status := range []string{EmojiOpenPR, EmojiMergedPR, EmojiClosedPR} {
+		for _, group := range groups {
+			for _, pr := range group {
+				if pr.Status == status {
+					ordered = append(ordered, pr)
+				}
+			}
+		}
+	}
+
+	return ordered
+}
+
+func sortPullRequestGroup(prs []PRInfo) []PRInfo {
+	ordered := append([]PRInfo(nil), prs...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].Number < ordered[j].Number
+	})
+	return ordered
+}
+
+func (cs *CheckSummary) displayPullRequestLegend() {
+	fmt.Println("---")
+	fmt.Printf("PR status:       %s Open    %s Merged    %s Closed\n", EmojiOpenPR, EmojiMergedPR, EmojiClosedPR)
+	fmt.Printf("PR type:         %s Verified    %s Testing    %s Renovate    %s Translation    %s Merged\n", EmojiVerified, EmojiTesting, EmojiRenovate, EmojiTranslation, EmojiMerged)
+	fmt.Printf("Open PR state:   %s    %s    %s\n", PRMergeable, PRBlocked, PRUnknown)
+}
+
+func (cs *CheckSummary) displayIssueLegend() {
+	fmt.Println("---")
+	fmt.Printf("Issue status:    %s Open    %s Closed\n", EmojiOpenIssue, EmojiClosedIssue)
+	fmt.Printf("Progress status: %s In Progress    %s Testing    %s Verified\n", EmojiInProgress, EmojiTesting, EmojiVerified)
+}
+
+func (cs *CheckSummary) allIssuesVerified() bool {
 	for _, info := range cs.Issues {
 		// Skip parent issues with children (check children instead)
 		if len(info.Children) > 0 {
 			for _, childNum := range info.Children {
 				if cs.Issues[childNum].Progress != EmojiVerified {
-					allVerified = false
-					break
+					return false
 				}
 			}
 		} else if info.Progress != EmojiVerified {
-			allVerified = false
-			break
+			return false
 		}
 	}
 
-	if len(cs.UnlinkedPRs) == 0 && allVerified {
-		fmt.Println()
-		fmt.Printf("%s✅ All checks passed! Ready to release.%s\n", ColorGreen, ColorReset)
-	}
-
-	// Legend
-	fmt.Println("---")
-	fmt.Printf("Issue status:    %s Open    %s Closed\n", EmojiOpenIssue, EmojiClosedIssue)
-	fmt.Printf("Progress status: %s In Progress    %s Testing    %s Verified\n", EmojiInProgress, EmojiTesting, EmojiVerified)
+	return true
 }
 
 // displayIssue displays a single top-level issue and its direct children.
