@@ -364,8 +364,8 @@ https://github.com/NethServer/ns8-module/pull/100
 Summary:
 --------
 PRs:
-🟪   🤖 https://github.com/NethServer/ns8-module/pull/790 dependencies
-🟪   🔀 https://github.com/NethServer/ns8-module/pull/789 cleanup
+🟪   🤖 Update dependency foo to v2 dependencies
+🟪   🔀 Clean up legacy configuration cleanup
 
 ---
 PR status:       🟩 Open    🟪 Merged    ⬛ Closed
@@ -373,11 +373,11 @@ PR type:         🤖 Renovate    🌐 Translation    🔀 Merged
 Open PR state:   mergeable    blocked    unknown
 
 Issues:
-🟢   🚧 https://github.com/NethServer/dev/issues/101 bug
-├─🟩  https://github.com/NethServer/ns8-module/pull/456 mergeable
-└─🟪 🔀 https://github.com/NethServer/ns8-module/pull/123 nethvoice
-🟣   ✅ https://github.com/NethServer/dev/issues/102 enhancement
-└─🟩  https://github.com/NethServer/ns8-module/pull/100 unknown
+🟢   🚧 Fix login redirect loop bug
+├─ 🟩 Add session timeout handling mergeable
+└─ 🟪 Refactor authentication middleware nethvoice
+🟣   ✅ Improve dashboard performance enhancement
+└─ 🟩 Cache expensive aggregate queries unknown
 
 ---
 Issue status:    🟢 Open    🟣 Closed
@@ -386,6 +386,11 @@ Progress status: 🚧 In Progress    🔨 Testing    ✅ Verified
 Commits outside PRs:
 https://github.com/NethServer/ns8-module/commit/abc123
 ```
+
+Issue and PR entries display the GitHub title (truncated to 72 characters)
+rendered as an OSC 8 terminal hyperlink, so clicking the title opens the
+corresponding issue or pull request. Terminals without OSC 8 support show the
+title as plain text.
 
 Weblate PRs are identified by author login `weblate`, while merged Renovate PRs
 are identified by author login `renovate[bot]`. Author-based categories have
