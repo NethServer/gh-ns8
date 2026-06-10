@@ -41,9 +41,41 @@ const (
 	PRUnknown   = "unknown"
 )
 
+// maxTitleLength caps the displayed title length for issues and PRs.
+const maxTitleLength = 72
+
+// hyperlink wraps text in an OSC 8 terminal hyperlink pointing at url.
+func hyperlink(url, text string) string {
+	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
+}
+
+// truncateTitle shortens a title to maxTitleLength runes, adding an ellipsis
+// when the title is cut.
+func truncateTitle(title string) string {
+	runes := []rune(title)
+	if len(runes) <= maxTitleLength {
+		return title
+	}
+	return string(runes[:maxTitleLength-1]) + "…"
+}
+
+// titleLink renders "#number truncated-title" as an OSC 8 hyperlink to url,
+// falling back to just "#number" when no title is available.
+func titleLink(number int, title, url string) string {
+	prefix := fmt.Sprintf("#%d", number)
+	text := truncateTitle(title)
+	if text != "" {
+		text = prefix + " " + text
+	} else {
+		text = prefix
+	}
+	return hyperlink(url, text)
+}
+
 // IssueInfo holds display information about an issue
 type IssueInfo struct {
 	Number       int
+	Title        string // Issue title
 	Status       string // Open/Closed emoji
 	Progress     string // Progress emoji
 	Labels       string // Filtered labels (without testing/verified)
@@ -68,6 +100,7 @@ type PRInfo struct {
 	Number       int
 	Category     PRCategory
 	URL          string
+	Title        string
 	Status       string
 	Progress     string
 	Mergeability string
@@ -120,6 +153,7 @@ func newPRInfo(repo string, pr *github.PullRequest, category PRCategory) PRInfo 
 		Number:       pr.Number,
 		Category:     category,
 		URL:          pullRequestURL(repo, pr),
+		Title:        pr.Title,
 		Status:       pullRequestStatus(pr),
 		Progress:     pullRequestProgress(category),
 		Mergeability: pullRequestMergeability(pr),
@@ -257,6 +291,7 @@ func (cs *CheckSummary) loadIssueInfo(client issueProvider, issueNumber, refCoun
 
 	info := &IssueInfo{
 		Number:   issueNumber,
+		Title:    issue.Title,
 		RefCount: refCount,
 	}
 
@@ -474,7 +509,7 @@ func displayPullRequest(info PRInfo) {
 	fmt.Printf("%s   %s %s%s\n",
 		info.Status,
 		displayedPullRequestProgress(info),
-		info.URL,
+		titleLink(info.Number, info.Title, info.URL),
 		suffix)
 }
 
@@ -596,7 +631,7 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 	fmt.Printf("%s   %s %s %s\n",
 		info.Status,
 		info.Progress,
-		issueURL,
+		titleLink(info.Number, info.Title, issueURL),
 		info.Labels)
 
 	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
@@ -621,7 +656,7 @@ func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
 	fmt.Printf("└─%s %s %s %s\n",
 		info.Status,
 		info.Progress,
-		issueURL,
+		titleLink(info.Number, info.Title, issueURL),
 		info.Labels)
 
 	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
@@ -647,10 +682,9 @@ func displayNestedPullRequest(prefix string, info PRInfo) {
 		suffix = " " + strings.Join(details, " ")
 	}
 
-	fmt.Printf("%s%s %s %s%s\n",
+	fmt.Printf("%s %s %s%s\n",
 		prefix,
 		info.Status,
-		displayedPullRequestProgress(info),
-		info.URL,
+		titleLink(info.Number, info.Title, info.URL),
 		suffix)
 }

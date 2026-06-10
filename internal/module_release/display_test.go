@@ -2,6 +2,7 @@ package module_release
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -91,6 +92,7 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 	summary.Issues[7927] = &IssueInfo{
 		Number:   7927,
+		Title:    "Verified issue title",
 		Status:   EmojiOpenIssue,
 		Progress: EmojiVerified,
 		RefCount: 3,
@@ -98,6 +100,7 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	}
 	summary.Issues[7310] = &IssueInfo{
 		Number:   7310,
+		Title:    "Parent issue title",
 		Status:   EmojiOpenIssue,
 		Progress: EmojiInProgress,
 		RefCount: 0,
@@ -106,6 +109,7 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	}
 	summary.Issues[7878] = &IssueInfo{
 		Number:       7878,
+		Title:        "Child issue title",
 		Status:       EmojiOpenIssue,
 		Progress:     EmojiInProgress,
 		RefCount:     2,
@@ -115,10 +119,12 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	summary.issueOrder = []int{7310, 7927}
 
 	output := captureStdout(t, summary.Display)
-	if !strings.Contains(output, "🟢   ✅ https://github.com/NethServer/dev/issues/7927 nethvoice") {
+	wantTop := "🟢   ✅ " + titleLink(7927, "Verified issue title", "https://github.com/NethServer/dev/issues/7927") + " nethvoice"
+	if !strings.Contains(output, wantTop) {
 		t.Fatalf("missing legacy top-level formatting in output:\n%s", output)
 	}
-	if !strings.Contains(output, "└─🟢 🚧 https://github.com/NethServer/dev/issues/7878 nethvoice") {
+	wantChild := "└─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878") + " nethvoice"
+	if !strings.Contains(output, wantChild) {
 		t.Fatalf("missing legacy child formatting in output:\n%s", output)
 	}
 }
@@ -149,10 +155,10 @@ func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 	}
 
 	wantOrder := []string{
-		"🟩    https://github.com/NethServer/ns8-test/pull/13 unknown",
-		"🟩    https://github.com/NethServer/ns8-test/pull/10 mergeable nethvoice",
-		"🟪   🤖 https://github.com/NethServer/ns8-test/pull/12 dependencies",
-		"🟪   🔀 https://github.com/NethServer/ns8-test/pull/14",
+		"🟩    " + titleLink(13, "PR 13 title", "https://github.com/NethServer/ns8-test/pull/13") + " unknown",
+		"🟩    " + titleLink(10, "PR 10 title", "https://github.com/NethServer/ns8-test/pull/10") + " mergeable nethvoice",
+		"🟪   🤖 " + titleLink(12, "PR 12 title", "https://github.com/NethServer/ns8-test/pull/12") + " dependencies",
+		"🟪   🔀 " + titleLink(14, "PR 14 title", "https://github.com/NethServer/ns8-test/pull/14"),
 	}
 	lastIndex := -1
 	for _, want := range wantOrder {
@@ -172,6 +178,7 @@ func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
 	mergeable := true
 	issue := &IssueInfo{
 		Number:   100,
+		Title:    "Linked issue title",
 		Status:   EmojiOpenIssue,
 		Progress: EmojiTesting,
 		RefCount: 2,
@@ -188,9 +195,9 @@ func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
 		t.Fatalf("linked PRs should not create a top-level PR section:\n%s", output)
 	}
 	for _, want := range []string{
-		"🟢   🔨 https://github.com/NethServer/dev/issues/100",
-		"├─🟩  https://github.com/NethServer/ns8-test/pull/10 mergeable",
-		"└─🟪 🔀 https://github.com/NethServer/ns8-test/pull/11",
+		"🟢   🔨 " + titleLink(100, "Linked issue title", "https://github.com/NethServer/dev/issues/100"),
+		"├─ 🟩 " + titleLink(10, "PR 10 title", "https://github.com/NethServer/ns8-test/pull/10") + " mergeable",
+		"└─ 🟪 " + titleLink(11, "PR 11 title", "https://github.com/NethServer/ns8-test/pull/11"),
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
@@ -292,6 +299,7 @@ func TestDisplayHidesEmptySections(t *testing.T) {
 func makeDisplayPullRequest(number int, state string, merged bool, mergeable *bool, mergeableState string, draft bool, labels ...string) *ghgithub.PullRequest {
 	pr := &ghgithub.PullRequest{
 		Number:         number,
+		Title:          fmt.Sprintf("PR %d title", number),
 		State:          state,
 		Merged:         merged,
 		Mergeable:      mergeable,

@@ -223,6 +223,7 @@ func (c *Client) DeleteRelease(repo, tag string) error {
 type PullRequest struct {
 	Number         int    `json:"number"`
 	HTMLURL        string `json:"html_url"`
+	Title          string `json:"title"`
 	State          string `json:"state"`
 	Body           string `json:"body"`
 	Merged         bool   `json:"merged"`
