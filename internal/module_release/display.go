@@ -493,10 +493,7 @@ func (cs *CheckSummary) displayPullRequests() {
 }
 
 func displayPullRequest(info PRInfo) {
-	details := make([]string, 0, 2)
-	if info.Mergeability != "" {
-		details = append(details, info.Mergeability)
-	}
+	details := make([]string, 0, 1)
 	if info.Labels != "" {
 		details = append(details, info.Labels)
 	}
@@ -599,7 +596,6 @@ func (cs *CheckSummary) displayPullRequestLegend() {
 	fmt.Println("---")
 	fmt.Printf("PR status:       %s Open    %s Merged    %s Closed\n", EmojiOpenPR, EmojiMergedPR, EmojiClosedPR)
 	fmt.Printf("PR type:         %s Renovate    %s Translation    %s Merged\n", EmojiRenovate, EmojiTranslation, EmojiMerged)
-	fmt.Printf("Open PR state:   %s    %s    %s\n", PRMergeable, PRBlocked, PRUnknown)
 }
 
 func (cs *CheckSummary) displayIssueLegend() {
@@ -628,18 +624,18 @@ func (cs *CheckSummary) allIssuesVerified() bool {
 // displayIssue displays a single top-level issue and its direct children.
 func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("%s   %s %s %s\n",
+	connector := "  "
+	if len(info.Children) == 0 {
+		connector = "──"
+	}
+	fmt.Printf("%s%s %s %s\n",
 		info.Status,
+		connector,
 		info.Progress,
-		titleLink(info.Number, info.Title, issueURL),
-		info.Labels)
+		titleLink(info.Number, info.Title, issueURL))
 
-	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
-		prefix := "├─"
-		if idx == len(info.LinkedPRs)-1 && len(info.Children) == 0 {
-			prefix = "└─"
-		}
-		displayNestedPullRequest(prefix, pr)
+	for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
+		displayNestedPullRequest(pr)
 	}
 
 	// Display children
@@ -653,26 +649,18 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 // displayChildIssue displays a child issue with proper indentation
 func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("└─%s %s %s %s\n",
+	fmt.Printf("└─%s %s %s\n",
 		info.Status,
 		info.Progress,
-		titleLink(info.Number, info.Title, issueURL),
-		info.Labels)
+		titleLink(info.Number, info.Title, issueURL))
 
-	for idx, pr := range orderedPullRequestInfos(info.LinkedPRs) {
-		prefix := "  ├─"
-		if idx == len(info.LinkedPRs)-1 {
-			prefix = "  └─"
-		}
-		displayNestedPullRequest(prefix, pr)
+	for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
+		displayNestedPullRequest(pr)
 	}
 }
 
-func displayNestedPullRequest(prefix string, info PRInfo) {
-	details := make([]string, 0, 2)
-	if info.Mergeability != "" {
-		details = append(details, info.Mergeability)
-	}
+func displayNestedPullRequest(info PRInfo) {
+	details := make([]string, 0, 1)
 	if info.Labels != "" {
 		details = append(details, info.Labels)
 	}
@@ -682,8 +670,7 @@ func displayNestedPullRequest(prefix string, info PRInfo) {
 		suffix = " " + strings.Join(details, " ")
 	}
 
-	fmt.Printf("%s %s %s%s\n",
-		prefix,
+	fmt.Printf("        • %s %s%s\n",
 		info.Status,
 		titleLink(info.Number, info.Title, info.URL),
 		suffix)

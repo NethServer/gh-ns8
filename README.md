@@ -373,11 +373,12 @@ PR type:         🤖 Renovate    🌐 Translation    🔀 Merged
 Open PR state:   mergeable    blocked    unknown
 
 Issues:
-🟢   🚧 Fix login redirect loop bug
-├─ 🟩 Add session timeout handling mergeable
-└─ 🟪 Refactor authentication middleware nethvoice
-🟣   ✅ Improve dashboard performance enhancement
-└─ 🟩 Cache expensive aggregate queries unknown
+🟢── 🚧 #101 Fix login redirect loop bug bug
+        • 🟩 #456 Add session timeout handling mergeable
+        • 🟪 #123 Refactor authentication middleware nethvoice
+🟢   🚧 #133 Improve dashboard performance enhancement
+└─🟣 ✅ #142 Cache expensive aggregate queries
+        • 🟩 #100 Wire cache into report endpoint unknown
 
 ---
 Issue status:    🟢 Open    🟣 Closed

@@ -119,13 +119,17 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	summary.issueOrder = []int{7310, 7927}
 
 	output := captureStdout(t, summary.Display)
-	wantTop := "🟢   ✅ " + titleLink(7927, "Verified issue title", "https://github.com/NethServer/dev/issues/7927") + " nethvoice"
+	wantTop := "🟢── ✅ " + titleLink(7927, "Verified issue title", "https://github.com/NethServer/dev/issues/7927")
 	if !strings.Contains(output, wantTop) {
-		t.Fatalf("missing legacy top-level formatting in output:\n%s", output)
+		t.Fatalf("missing top-level formatting in output:\n%s", output)
 	}
-	wantChild := "└─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878") + " nethvoice"
+	wantParent := "🟢   🚧 " + titleLink(7310, "Parent issue title", "https://github.com/NethServer/dev/issues/7310")
+	if !strings.Contains(output, wantParent) {
+		t.Fatalf("missing parent formatting in output:\n%s", output)
+	}
+	wantChild := "└─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878")
 	if !strings.Contains(output, wantChild) {
-		t.Fatalf("missing legacy child formatting in output:\n%s", output)
+		t.Fatalf("missing child formatting in output:\n%s", output)
 	}
 }
 
@@ -155,8 +159,8 @@ func TestDisplayShowsCategorizedPullRequests(t *testing.T) {
 	}
 
 	wantOrder := []string{
-		"🟩    " + titleLink(13, "PR 13 title", "https://github.com/NethServer/ns8-test/pull/13") + " unknown",
-		"🟩    " + titleLink(10, "PR 10 title", "https://github.com/NethServer/ns8-test/pull/10") + " mergeable nethvoice",
+		"🟩    " + titleLink(13, "PR 13 title", "https://github.com/NethServer/ns8-test/pull/13"),
+		"🟩    " + titleLink(10, "PR 10 title", "https://github.com/NethServer/ns8-test/pull/10") + " nethvoice",
 		"🟪   🤖 " + titleLink(12, "PR 12 title", "https://github.com/NethServer/ns8-test/pull/12") + " dependencies",
 		"🟪   🔀 " + titleLink(14, "PR 14 title", "https://github.com/NethServer/ns8-test/pull/14"),
 	}
@@ -195,9 +199,9 @@ func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
 		t.Fatalf("linked PRs should not create a top-level PR section:\n%s", output)
 	}
 	for _, want := range []string{
-		"🟢   🔨 " + titleLink(100, "Linked issue title", "https://github.com/NethServer/dev/issues/100"),
-		"├─ 🟩 " + titleLink(10, "PR 10 title", "https://github.com/NethServer/ns8-test/pull/10") + " mergeable",
-		"└─ 🟪 " + titleLink(11, "PR 11 title", "https://github.com/NethServer/ns8-test/pull/11"),
+		"🟢── 🔨 " + titleLink(100, "Linked issue title", "https://github.com/NethServer/dev/issues/100"),
+		"        • 🟩 " + titleLink(10, "PR 10 title", "https://github.com/NethServer/ns8-test/pull/10"),
+		"        • 🟪 " + titleLink(11, "PR 11 title", "https://github.com/NethServer/ns8-test/pull/11"),
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
@@ -229,7 +233,7 @@ func TestDisplayPlacesLegendsUnderTheirLists(t *testing.T) {
 	if strings.Contains(prGap, "\n\n") {
 		t.Fatalf("unexpected blank line between PR list and PR legend:\n%s", output)
 	}
-	gap := output[strings.Index(output, "Open PR state:"):issuesIndex]
+	gap := output[strings.Index(output, "PR type:"):issuesIndex]
 	if !strings.Contains(gap, "\n\n") {
 		t.Fatalf("expected blank line between PR legend and issues:\n%s", output)
 	}
