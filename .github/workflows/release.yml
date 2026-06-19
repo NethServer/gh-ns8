@@ -22,7 +22,7 @@ jobs:
           format: "cyclonedx"
           output: "sbom.cdx.json"
       - name: Upload SBOM to release
-        uses: softprops/action-gh-release@v3.0.0
+        uses: softprops/action-gh-release@v3.0.1
         with:
           files: sbom.cdx.json
           tag_name: ${{ github.ref_name }}
