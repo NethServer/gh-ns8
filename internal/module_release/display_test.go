@@ -209,6 +209,104 @@ func TestDisplayShowsLinkedPullRequestsUnderIssues(t *testing.T) {
 	}
 }
 
+func TestDisplayGroupsIssuesByReleaseReadiness(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+	summary.Issues[1] = &IssueInfo{
+		Number:   1,
+		Title:    "Ready issue",
+		Status:   EmojiOpenIssue,
+		Progress: EmojiVerified,
+		LinkedPRs: []PRInfo{
+			{Number: 11, Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/11"},
+		},
+	}
+	summary.Issues[2] = &IssueInfo{
+		Number:   2,
+		Title:    "Blocker issue",
+		Status:   EmojiOpenIssue,
+		Progress: EmojiTesting,
+		LinkedPRs: []PRInfo{
+			{Number: 12, Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/12"},
+			{Number: 13, Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/13"},
+		},
+	}
+	summary.Issues[3] = &IssueInfo{
+		Number:   3,
+		Title:    "Other issue",
+		Status:   EmojiOpenIssue,
+		Progress: EmojiVerified,
+		LinkedPRs: []PRInfo{
+			{Number: 14, Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/14"},
+			{Number: 15, Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/15"},
+		},
+	}
+	summary.issueOrder = []int{1, 2, 3}
+
+	output := captureStdout(t, summary.Display)
+	readyIndex := strings.Index(output, "Ready to release:")
+	readyIssueIndex := strings.Index(output, titleLink(1, "Ready issue", "https://github.com/NethServer/dev/issues/1"))
+	blockerIndex := strings.Index(output, "Release blockers:")
+	blockerIssueIndex := strings.Index(output, titleLink(2, "Blocker issue", "https://github.com/NethServer/dev/issues/2"))
+	otherIndex := strings.Index(output, "Other issues:")
+	otherIssueIndex := strings.Index(output, titleLink(3, "Other issue", "https://github.com/NethServer/dev/issues/3"))
+
+	for label, index := range map[string]int{
+		"ready heading":   readyIndex,
+		"ready issue":     readyIssueIndex,
+		"blocker heading": blockerIndex,
+		"blocker issue":   blockerIssueIndex,
+		"other heading":   otherIndex,
+		"other issue":     otherIssueIndex,
+	} {
+		if index == -1 {
+			t.Fatalf("missing %s in output:\n%s", label, output)
+		}
+	}
+	if !(readyIndex < readyIssueIndex && readyIssueIndex < blockerIndex &&
+		blockerIndex < blockerIssueIndex && blockerIssueIndex < otherIndex &&
+		otherIndex < otherIssueIndex) {
+		t.Fatalf("issue groups are not in expected order:\n%s", output)
+	}
+}
+
+func TestDisplayGroupsChildrenIgnoringParentProgress(t *testing.T) {
+	summary := NewCheckSummary("NethServer/dev")
+	summary.Issues[100] = &IssueInfo{
+		Number:   100,
+		Title:    "Unverified parent",
+		Status:   EmojiOpenIssue,
+		Progress: EmojiInProgress,
+		Children: []int{101},
+	}
+	summary.Issues[101] = &IssueInfo{
+		Number:       101,
+		Title:        "Verified child",
+		Status:       EmojiOpenIssue,
+		Progress:     EmojiVerified,
+		ParentNumber: 100,
+		LinkedPRs: []PRInfo{
+			{Number: 20, Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/20"},
+		},
+	}
+	summary.issueOrder = []int{100}
+
+	output := captureStdout(t, summary.Display)
+	readyIndex := strings.Index(output, "Ready to release:")
+	parentIndex := strings.Index(output, titleLink(100, "Unverified parent", "https://github.com/NethServer/dev/issues/100"))
+	childIndex := strings.Index(output, titleLink(101, "Verified child", "https://github.com/NethServer/dev/issues/101"))
+	blockerIndex := strings.Index(output, "Release blockers:")
+
+	if readyIndex == -1 || parentIndex == -1 || childIndex == -1 {
+		t.Fatalf("missing ready parent/child group in output:\n%s", output)
+	}
+	if blockerIndex != -1 {
+		t.Fatalf("parent progress should not create a release blocker group:\n%s", output)
+	}
+	if !(readyIndex < parentIndex && parentIndex < childIndex) {
+		t.Fatalf("parent and child are not shown in the ready group:\n%s", output)
+	}
+}
+
 func TestDisplayPlacesLegendsUnderTheirLists(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 	summary.AddPullRequest("NethServer/ns8-test", makeDisplayPullRequest(10, "closed", true, nil, "", false), PRCategoryMerged)

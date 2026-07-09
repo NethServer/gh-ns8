@@ -44,6 +44,15 @@ const (
 // maxTitleLength caps the displayed title length for issues and PRs.
 const maxTitleLength = 72
 
+// issueReleaseGroup identifies issue readiness buckets in the issue list.
+type issueReleaseGroup int
+
+const (
+	issueReleaseGroupReady issueReleaseGroup = iota
+	issueReleaseGroupBlocker
+	issueReleaseGroupOther
+)
+
 // hyperlink wraps text in an OSC 8 terminal hyperlink pointing at url.
 func hyperlink(url, text string) string {
 	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
@@ -458,13 +467,7 @@ func (cs *CheckSummary) Display() {
 		fmt.Println()
 	}
 
-	// Issues
-	fmt.Printf("%sIssues:%s\n", ColorBold, ColorReset)
-
-	for _, info := range cs.orderedTopLevelIssues() {
-		cs.displayIssue(info)
-	}
-	cs.displayIssueLegend()
+	cs.displayIssues()
 
 	// Orphan commits
 	if len(cs.OrphanCommits) > 0 {
@@ -606,14 +609,10 @@ func (cs *CheckSummary) displayIssueLegend() {
 
 func (cs *CheckSummary) allIssuesVerified() bool {
 	for _, info := range cs.Issues {
-		// Skip parent issues with children (check children instead)
 		if len(info.Children) > 0 {
-			for _, childNum := range info.Children {
-				if cs.Issues[childNum].Progress != EmojiVerified {
-					return false
-				}
-			}
-		} else if info.Progress != EmojiVerified {
+			continue
+		}
+		if info.Progress != EmojiVerified {
 			return false
 		}
 	}
@@ -621,8 +620,115 @@ func (cs *CheckSummary) allIssuesVerified() bool {
 	return true
 }
 
-// displayIssue displays a single top-level issue and its direct children.
-func (cs *CheckSummary) displayIssue(info *IssueInfo) {
+func (cs *CheckSummary) displayIssues() {
+	fmt.Printf("%sIssues:%s\n", ColorBold, ColorReset)
+
+	groups := []struct {
+		title string
+		group issueReleaseGroup
+	}{
+		{title: "Ready to release:", group: issueReleaseGroupReady},
+		{title: "Release blockers:", group: issueReleaseGroupBlocker},
+		{title: "Other issues:", group: issueReleaseGroupOther},
+	}
+
+	firstGroup := true
+	for _, issueGroup := range groups {
+		if !cs.hasIssuesInGroup(issueGroup.group) {
+			continue
+		}
+		if !firstGroup {
+			fmt.Println()
+		}
+		fmt.Printf("%s%s%s\n", ColorBold, issueGroup.title, ColorReset)
+		for _, info := range cs.orderedTopLevelIssues() {
+			if cs.issueTreeMatchesGroup(info, issueGroup.group) {
+				cs.displayIssueInGroup(info, issueGroup.group)
+			}
+		}
+		firstGroup = false
+	}
+
+	cs.displayIssueLegend()
+}
+
+func (cs *CheckSummary) hasIssuesInGroup(group issueReleaseGroup) bool {
+	for _, info := range cs.orderedTopLevelIssues() {
+		if cs.issueTreeMatchesGroup(info, group) {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *CheckSummary) issueTreeMatchesGroup(info *IssueInfo, group issueReleaseGroup) bool {
+	if len(info.Children) == 0 {
+		return issueMatchesGroup(info, group)
+	}
+
+	for _, childNum := range info.Children {
+		childInfo, exists := cs.Issues[childNum]
+		if exists && issueMatchesGroup(childInfo, group) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func issueMatchesGroup(info *IssueInfo, group issueReleaseGroup) bool {
+	switch group {
+	case issueReleaseGroupReady:
+		return issueReadyToRelease(info)
+	case issueReleaseGroupBlocker:
+		return issueBlocksRelease(info)
+	default:
+		return !issueReadyToRelease(info) && !issueBlocksRelease(info)
+	}
+}
+
+func issueReadyToRelease(info *IssueInfo) bool {
+	return len(info.LinkedPRs) > 0 && allIssuePullRequestsMerged(info) && info.Progress == EmojiVerified
+}
+
+func issueBlocksRelease(info *IssueInfo) bool {
+	return issueHasMergedPullRequest(info) && info.Progress != EmojiVerified
+}
+
+func allIssuePullRequestsMerged(info *IssueInfo) bool {
+	for _, pr := range info.LinkedPRs {
+		if pr.Status != EmojiMergedPR {
+			return false
+		}
+	}
+	return true
+}
+
+func issueHasMergedPullRequest(info *IssueInfo) bool {
+	for _, pr := range info.LinkedPRs {
+		if pr.Status == EmojiMergedPR {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *CheckSummary) displayIssueInGroup(info *IssueInfo, group issueReleaseGroup) {
+	if len(info.Children) == 0 {
+		cs.displayIssue(info)
+		return
+	}
+
+	cs.displayIssueHeader(info)
+	for _, childNum := range info.Children {
+		childInfo, exists := cs.Issues[childNum]
+		if exists && issueMatchesGroup(childInfo, group) {
+			cs.displayChildIssue(childInfo)
+		}
+	}
+}
+
+func (cs *CheckSummary) displayIssueHeader(info *IssueInfo) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
 	connector := "  "
 	if len(info.Children) == 0 {
@@ -637,6 +743,11 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 	for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
 		displayNestedPullRequest(pr)
 	}
+}
+
+// displayIssue displays a single top-level issue and its direct children.
+func (cs *CheckSummary) displayIssue(info *IssueInfo) {
+	cs.displayIssueHeader(info)
 
 	// Display children
 	for _, childNum := range info.Children {
