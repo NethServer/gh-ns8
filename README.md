@@ -27,6 +27,7 @@ A GitHub CLI (`gh`) extension for automating NethServer 8 module release managem
 - Include linked issues from PRs in release notes
 - Check if a module is ready for release
 - Display PRs by renovate, translation, and merged type
+- Group linked issues by release readiness and release blockers
 - Warn when open Weblate PRs are present
 - Comment on linked issues with release notifications
 - Remove pre-releases between stable releases
@@ -325,7 +326,8 @@ The `check` command outputs a summary of:
 - Open PR mergeability (`mergeable`, `blocked`, or `unknown`)
 - Open Weblate PR warnings
 - Commits outside PRs (orphan commits)
-- Issues with their status, progress, and linked PRs
+- Issues grouped as ready to release, release blockers, or other issues
+- Issue status, progress, and linked PRs
 
 ### Emojis Used
 
@@ -373,12 +375,15 @@ PR type:         🤖 Renovate    🌐 Translation    🔀 Merged
 Open PR state:   mergeable    blocked    unknown
 
 Issues:
-🟢── 🚧 #101 Fix login redirect loop bug bug
-        • 🟩 #456 Add session timeout handling mergeable
+Ready to release:
+🟢── ✅ #101 Fix login redirect loop bug bug
         • 🟪 #123 Refactor authentication middleware nethvoice
+
+Release blockers:
 🟢   🚧 #133 Improve dashboard performance enhancement
-└─🟣 ✅ #142 Cache expensive aggregate queries
+└─🟣 🚧 #142 Cache expensive aggregate queries
         • 🟩 #100 Wire cache into report endpoint unknown
+        • 🟪 #456 Add session timeout handling mergeable
 
 ---
 Issue status:    🟢 Open    🟣 Closed
@@ -401,8 +406,12 @@ when they link one or more issues. The PR list is shown as a single section
 sorted by PR status first (`open`, `merged`, `closed`) and by PR type second
 (`renovate`, `translation`, `generic`, `merged`). When a PR links one or more
 issues, it is rendered only under those issues and is omitted from the top-level
-PR list. Open PR rows keep the PR type column blank while preserving spacing. If
-open Weblate PRs exist, the command also prints the warning before the summary.
+PR list. Linked issues are grouped as ready to release when all their linked PRs
+are merged and the issue is verified. They are grouped as release blockers when
+at least one linked PR is merged but the issue is not verified. Parent issue
+status is ignored for grouping; children determine the parent placement. Open PR
+rows keep the PR type column blank while preserving spacing. If open Weblate PRs
+exist, the command also prints the warning before the summary.
 
 ## Migration from Bash
 
