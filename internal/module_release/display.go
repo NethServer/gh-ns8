@@ -49,6 +49,7 @@ type issueReleaseGroup int
 
 const (
 	issueReleaseGroupReady issueReleaseGroup = iota
+	issueReleaseGroupToBeReleased
 	issueReleaseGroupBlocker
 	issueReleaseGroupOther
 )
@@ -478,7 +479,7 @@ func (cs *CheckSummary) Display() {
 		}
 	}
 
-	if len(cs.MergedPRs) == 0 && !cs.hasBlockedOpenPullRequests() && cs.allIssuesVerified() {
+	if len(cs.MergedPRs) == 0 && !cs.hasBlockedOpenPullRequests() && cs.allIssuesReadyToRelease() {
 		fmt.Println()
 		fmt.Printf("%s✅ All checks passed! Ready to release.%s\n", ColorGreen, ColorReset)
 	}
@@ -607,12 +608,12 @@ func (cs *CheckSummary) displayIssueLegend() {
 	fmt.Printf("Progress status: %s In Progress    %s Testing    %s Verified\n", EmojiInProgress, EmojiTesting, EmojiVerified)
 }
 
-func (cs *CheckSummary) allIssuesVerified() bool {
+func (cs *CheckSummary) allIssuesReadyToRelease() bool {
 	for _, info := range cs.Issues {
 		if len(info.Children) > 0 {
 			continue
 		}
-		if info.Progress != EmojiVerified {
+		if !issueReadyToRelease(info) {
 			return false
 		}
 	}
@@ -628,6 +629,7 @@ func (cs *CheckSummary) displayIssues() {
 		group issueReleaseGroup
 	}{
 		{title: "Ready to release:", group: issueReleaseGroupReady},
+		{title: "To be released:", group: issueReleaseGroupToBeReleased},
 		{title: "Release blockers:", group: issueReleaseGroupBlocker},
 		{title: "Other issues:", group: issueReleaseGroupOther},
 	}
@@ -680,15 +682,21 @@ func issueMatchesGroup(info *IssueInfo, group issueReleaseGroup) bool {
 	switch group {
 	case issueReleaseGroupReady:
 		return issueReadyToRelease(info)
+	case issueReleaseGroupToBeReleased:
+		return issueToBeReleased(info)
 	case issueReleaseGroupBlocker:
 		return issueBlocksRelease(info)
 	default:
-		return !issueReadyToRelease(info) && !issueBlocksRelease(info)
+		return !issueReadyToRelease(info) && !issueToBeReleased(info) && !issueBlocksRelease(info)
 	}
 }
 
 func issueReadyToRelease(info *IssueInfo) bool {
 	return len(info.LinkedPRs) > 0 && allIssuePullRequestsMerged(info) && info.Progress == EmojiVerified
+}
+
+func issueToBeReleased(info *IssueInfo) bool {
+	return len(info.LinkedPRs) > 0 && !allIssuePullRequestsMerged(info) && info.Progress == EmojiVerified
 }
 
 func issueBlocksRelease(info *IssueInfo) bool {

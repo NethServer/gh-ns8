@@ -232,7 +232,7 @@ func TestDisplayGroupsIssuesByReleaseReadiness(t *testing.T) {
 	}
 	summary.Issues[3] = &IssueInfo{
 		Number:   3,
-		Title:    "Other issue",
+		Title:    "To be released issue",
 		Status:   EmojiOpenIssue,
 		Progress: EmojiVerified,
 		LinkedPRs: []PRInfo{
@@ -240,29 +240,43 @@ func TestDisplayGroupsIssuesByReleaseReadiness(t *testing.T) {
 			{Number: 15, Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/15"},
 		},
 	}
-	summary.issueOrder = []int{1, 2, 3}
+	summary.Issues[4] = &IssueInfo{
+		Number:   4,
+		Title:    "Other issue",
+		Status:   EmojiOpenIssue,
+		Progress: EmojiTesting,
+		LinkedPRs: []PRInfo{
+			{Number: 16, Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/16"},
+		},
+	}
+	summary.issueOrder = []int{1, 2, 3, 4}
 
 	output := captureStdout(t, summary.Display)
 	readyIndex := strings.Index(output, "Ready to release:")
 	readyIssueIndex := strings.Index(output, titleLink(1, "Ready issue", "https://github.com/NethServer/dev/issues/1"))
+	toBeReleasedIndex := strings.Index(output, "To be released:")
+	toBeReleasedIssueIndex := strings.Index(output, titleLink(3, "To be released issue", "https://github.com/NethServer/dev/issues/3"))
 	blockerIndex := strings.Index(output, "Release blockers:")
 	blockerIssueIndex := strings.Index(output, titleLink(2, "Blocker issue", "https://github.com/NethServer/dev/issues/2"))
 	otherIndex := strings.Index(output, "Other issues:")
-	otherIssueIndex := strings.Index(output, titleLink(3, "Other issue", "https://github.com/NethServer/dev/issues/3"))
+	otherIssueIndex := strings.Index(output, titleLink(4, "Other issue", "https://github.com/NethServer/dev/issues/4"))
 
 	for label, index := range map[string]int{
-		"ready heading":   readyIndex,
-		"ready issue":     readyIssueIndex,
-		"blocker heading": blockerIndex,
-		"blocker issue":   blockerIssueIndex,
-		"other heading":   otherIndex,
-		"other issue":     otherIssueIndex,
+		"ready heading":          readyIndex,
+		"ready issue":            readyIssueIndex,
+		"to be released heading": toBeReleasedIndex,
+		"to be released issue":   toBeReleasedIssueIndex,
+		"blocker heading":        blockerIndex,
+		"blocker issue":          blockerIssueIndex,
+		"other heading":          otherIndex,
+		"other issue":            otherIssueIndex,
 	} {
 		if index == -1 {
 			t.Fatalf("missing %s in output:\n%s", label, output)
 		}
 	}
-	if !(readyIndex < readyIssueIndex && readyIssueIndex < blockerIndex &&
+	if !(readyIndex < readyIssueIndex && readyIssueIndex < toBeReleasedIndex &&
+		toBeReleasedIndex < toBeReleasedIssueIndex && toBeReleasedIssueIndex < blockerIndex &&
 		blockerIndex < blockerIssueIndex && blockerIssueIndex < otherIndex &&
 		otherIndex < otherIssueIndex) {
 		t.Fatalf("issue groups are not in expected order:\n%s", output)
@@ -339,23 +353,43 @@ func TestDisplayPlacesLegendsUnderTheirLists(t *testing.T) {
 
 func TestDisplayReadyRequiresNoRemainingOrBlockedPRs(t *testing.T) {
 	ready := NewCheckSummary("NethServer/dev")
-	ready.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
+	ready.Issues[1] = &IssueInfo{
+		Number:   1,
+		Progress: EmojiVerified,
+		LinkedPRs: []PRInfo{
+			{Number: 10, Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/10"},
+		},
+	}
 	output := captureStdout(t, ready.Display)
 	if !strings.Contains(output, "All checks passed! Ready to release.") {
 		t.Fatalf("missing ready message in output:\n%s", output)
 	}
 
 	withRemaining := NewCheckSummary("NethServer/dev")
-	withRemaining.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
+	withRemaining.Issues[1] = &IssueInfo{
+		Number:   1,
+		Progress: EmojiVerified,
+		LinkedPRs: []PRInfo{
+			{Number: 10, Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/10"},
+		},
+	}
 	withRemaining.MergedPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/20"}}
 	output = captureStdout(t, withRemaining.Display)
 	if strings.Contains(output, "All checks passed! Ready to release.") {
 		t.Fatalf("ready message should be hidden with remaining PRs:\n%s", output)
 	}
 
+	withUnmerged := NewCheckSummary("NethServer/dev")
+	withUnmerged.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
+	withUnmerged.Issues[1].LinkedPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/21", Status: EmojiOpenPR, Mergeability: PRMergeable}}
+	output = captureStdout(t, withUnmerged.Display)
+	if strings.Contains(output, "All checks passed! Ready to release.") {
+		t.Fatalf("ready message should be hidden with unmerged linked PRs:\n%s", output)
+	}
+
 	withBlocked := NewCheckSummary("NethServer/dev")
 	withBlocked.Issues[1] = &IssueInfo{Number: 1, Progress: EmojiVerified}
-	withBlocked.Issues[1].LinkedPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/21", Mergeability: PRBlocked}}
+	withBlocked.Issues[1].LinkedPRs = []PRInfo{{URL: "https://github.com/NethServer/ns8-test/pull/22", Status: EmojiOpenPR, Mergeability: PRBlocked}}
 	output = captureStdout(t, withBlocked.Display)
 	if strings.Contains(output, "All checks passed! Ready to release.") {
 		t.Fatalf("ready message should be hidden with blocked open PRs:\n%s", output)
