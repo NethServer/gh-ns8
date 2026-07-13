@@ -24,6 +24,18 @@ func TestGetLinkedIssuesPreservesBodyOrderAcrossFormats(t *testing.T) {
 	}
 }
 
+func TestGetLinkedIssuesIgnoresRepositoryCase(t *testing.T) {
+	got := GetLinkedIssues(
+		"https://github.com/nethserver/dev/issues/8037",
+		"NethServer/dev",
+	)
+	want := []int{8037}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetLinkedIssues() = %v, want %v", got, want)
+	}
+}
+
 type fakeRepoClient struct {
 	repositories    map[string]*ghgithub.Repository
 	repositoryErrs  map[string]error

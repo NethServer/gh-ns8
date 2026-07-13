@@ -192,7 +192,7 @@ func GetLinkedIssues(prBody, issuesRepo string) []int {
 	owner, repo := parts[0], parts[1]
 
 	pattern := fmt.Sprintf(
-		`(?:%s/issues/(\d+))|(?:%s/%s#(\d+))|(?:https://github\.com/%s/%s/issues/(\d+))`,
+		`(?i)(?:%s/issues/(\d+))|(?:%s/%s#(\d+))|(?:https://github\.com/%s/%s/issues/(\d+))`,
 		regexp.QuoteMeta(owner),
 		regexp.QuoteMeta(owner),
 		regexp.QuoteMeta(repo),

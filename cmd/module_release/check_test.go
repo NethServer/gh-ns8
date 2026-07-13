@@ -155,7 +155,7 @@ func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 	mergeable := true
 	client := fakeCheckSummaryClient{
 		prs: map[int]*ghgithub.PullRequest{
-			7:  makeTestPullRequest(7, "Refs NethServer/dev#30", "", "open", false, "verified"),
+			7:  makeTestPullRequest(7, "https://github.com/nethserver/dev/issues/30", "", "open", false, "verified"),
 			9:  makeTestPullRequest(9, "Refs NethServer/dev#31", "renovate[bot]", "open", false, "testing"),
 			10: makeTestPullRequest(10, "Refs NethServer/dev#32", "", "open", false, "verified"),
 		},
@@ -179,7 +179,7 @@ func TestPopulateOpenPullRequestsAddsRelevantOpenPRs(t *testing.T) {
 		},
 		openPRs: []ghgithub.OpenPullRequest{
 			makeOpenPullRequest(6, "Translation update", "weblate"),
-			makeOpenPullRequest(7, "Refs NethServer/dev#30", ""),
+			makeOpenPullRequest(7, "https://github.com/nethserver/dev/issues/30", ""),
 			makeOpenPullRequest(8, "Unlinked open PR", ""),
 			makeOpenPullRequest(9, "Refs NethServer/dev#31", "renovate[bot]"),
 			makeOpenPullRequest(10, "Refs NethServer/dev#32", ""),
