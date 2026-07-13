@@ -62,7 +62,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	summary := module_release.NewCheckSummary(issuesRepoFlag)
 
 	if latestSHA == mainSHA {
-		fmt.Println("The latest release tag is the HEAD of the main branch, there is nothing to release")
+		fmt.Println("The latest release tag is the HEAD of the main branch, there is nothing ready to release")
 		populateOpenPullRequests(cmd.ErrOrStderr(), client, summary, repo, map[int]bool{})
 		if len(summary.Issues) > 0 || len(summary.OpenWeblatePRs) > 0 {
 			fmt.Println()
