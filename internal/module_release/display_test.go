@@ -88,7 +88,7 @@ func TestBashAssocKeyOrderMatchesLegacyOrdering(t *testing.T) {
 	}
 }
 
-func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
+func TestDisplayFormatsIssueHierarchy(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 	summary.Issues[7927] = &IssueInfo{
 		Number:   7927,
@@ -105,7 +105,7 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 		Progress: EmojiInProgress,
 		RefCount: 0,
 		Labels:   "nethvoice",
-		Children: []int{7878},
+		Children: []int{7878, 7879, 7880},
 	}
 	summary.Issues[7878] = &IssueInfo{
 		Number:       7878,
@@ -115,6 +115,29 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 		RefCount:     2,
 		Labels:       "nethvoice",
 		ParentNumber: 7310,
+		LinkedPRs: []PRInfo{
+			{Number: 10, Title: "First child PR", Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/10"},
+		},
+	}
+	summary.Issues[7879] = &IssueInfo{
+		Number:       7879,
+		Title:        "Last child in group",
+		Status:       EmojiOpenIssue,
+		Progress:     EmojiInProgress,
+		ParentNumber: 7310,
+		LinkedPRs: []PRInfo{
+			{Number: 11, Title: "Last child PR", Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/11"},
+		},
+	}
+	summary.Issues[7880] = &IssueInfo{
+		Number:       7880,
+		Title:        "Child in ready group",
+		Status:       EmojiOpenIssue,
+		Progress:     EmojiVerified,
+		ParentNumber: 7310,
+		LinkedPRs: []PRInfo{
+			{Number: 12, Title: "Ready child PR", Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/12"},
+		},
 	}
 	summary.issueOrder = []int{7310, 7927}
 
@@ -123,13 +146,19 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	if !strings.Contains(output, wantTop) {
 		t.Fatalf("missing top-level formatting in output:\n%s", output)
 	}
-	wantParent := "🟢   🚧 " + titleLink(7310, "Parent issue title", "https://github.com/NethServer/dev/issues/7310")
-	if !strings.Contains(output, wantParent) {
-		t.Fatalf("missing parent formatting in output:\n%s", output)
+	wantHierarchy := strings.Join([]string{
+		"🟢   🚧 " + titleLink(7310, "Parent issue title", "https://github.com/NethServer/dev/issues/7310"),
+		"├─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878"),
+		"│        • 🟩 " + titleLink(10, "First child PR", "https://github.com/NethServer/ns8-test/pull/10"),
+		"└─🟢 🚧 " + titleLink(7879, "Last child in group", "https://github.com/NethServer/dev/issues/7879"),
+		"        • 🟩 " + titleLink(11, "Last child PR", "https://github.com/NethServer/ns8-test/pull/11"),
+	}, "\n")
+	if !strings.Contains(output, wantHierarchy) {
+		t.Fatalf("missing sibling branches and PR continuation in output:\n%s", output)
 	}
-	wantChild := "└─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878")
+	wantChild := "└─🟢 ✅ " + titleLink(7880, "Child in ready group", "https://github.com/NethServer/dev/issues/7880")
 	if !strings.Contains(output, wantChild) {
-		t.Fatalf("missing child formatting in output:\n%s", output)
+		t.Fatalf("a single child in another group should use the final branch:\n%s", output)
 	}
 }
 
@@ -283,7 +312,135 @@ func TestDisplayGroupsIssuesByReleaseReadiness(t *testing.T) {
 	}
 }
 
-func TestDisplayGroupsChildrenIgnoringParentProgress(t *testing.T) {
+func TestDisplayClassifiesParentAndChildIndependently(t *testing.T) {
+	tests := []struct {
+		name           string
+		parentProgress string
+		parentPRStatus string
+		childProgress  string
+		childPRStatus  string
+		parentGroup    string
+		childGroup     string
+		allReady       bool
+	}{
+		{
+			name:           "unverified parent with pending verified child",
+			parentProgress: EmojiInProgress,
+			parentPRStatus: EmojiOpenPR,
+			childProgress:  EmojiVerified,
+			childPRStatus:  EmojiOpenPR,
+			parentGroup:    "Other issues:",
+			childGroup:     "To be released:",
+		},
+		{
+			name:           "testing parent with pending verified child",
+			parentProgress: EmojiTesting,
+			parentPRStatus: EmojiOpenPR,
+			childProgress:  EmojiVerified,
+			childPRStatus:  EmojiOpenPR,
+			parentGroup:    "Other issues:",
+			childGroup:     "To be released:",
+		},
+		{
+			name:           "testing parent with ready child",
+			parentProgress: EmojiTesting,
+			parentPRStatus: EmojiMergedPR,
+			childProgress:  EmojiVerified,
+			childPRStatus:  EmojiMergedPR,
+			parentGroup:    "Release blockers:",
+			childGroup:     "Ready to release:",
+		},
+		{
+			name:           "pending parent with ready child",
+			parentProgress: EmojiVerified,
+			parentPRStatus: EmojiOpenPR,
+			childProgress:  EmojiVerified,
+			childPRStatus:  EmojiMergedPR,
+			parentGroup:    "To be released:",
+			childGroup:     "Ready to release:",
+		},
+		{
+			name:           "ready parent with testing child",
+			parentProgress: EmojiVerified,
+			parentPRStatus: EmojiMergedPR,
+			childProgress:  EmojiTesting,
+			childPRStatus:  EmojiMergedPR,
+			parentGroup:    "Ready to release:",
+			childGroup:     "Release blockers:",
+		},
+		{
+			name:           "ready parent and child",
+			parentProgress: EmojiVerified,
+			parentPRStatus: EmojiMergedPR,
+			childProgress:  EmojiVerified,
+			childPRStatus:  EmojiMergedPR,
+			parentGroup:    "Ready to release:",
+			childGroup:     "Ready to release:",
+			allReady:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := NewCheckSummary("NethServer/dev")
+			parent := &IssueInfo{
+				Number:   7570,
+				Title:    "NethVoice: update FreePBX and Asterisk",
+				Status:   EmojiOpenIssue,
+				Progress: tt.parentProgress,
+				Children: []int{8108},
+				LinkedPRs: []PRInfo{
+					{Number: 873, Status: tt.parentPRStatus, URL: "https://github.com/nethesis/ns8-nethvoice/pull/873"},
+				},
+			}
+			child := &IssueInfo{
+				Number:       8108,
+				Title:        "NethVoice: Support external calendars in time conditions",
+				Status:       EmojiOpenIssue,
+				Progress:     tt.childProgress,
+				ParentNumber: parent.Number,
+				LinkedPRs: []PRInfo{
+					{Number: 949, Status: tt.childPRStatus, URL: "https://github.com/nethesis/ns8-nethvoice/pull/949"},
+				},
+			}
+			summary.Issues[parent.Number] = parent
+			summary.Issues[child.Number] = child
+			summary.issueOrder = []int{parent.Number}
+
+			output := captureStdout(t, summary.Display)
+			sections := make(map[string]string)
+			for _, title := range []string{"Ready to release:", "To be released:", "Release blockers:", "Other issues:"} {
+				if _, after, found := strings.Cut(output, ColorBold+title+ColorReset+"\n"); found {
+					sections[title], _, _ = strings.Cut(after, "\n"+ColorBold)
+				}
+			}
+
+			parentLink := titleLink(parent.Number, parent.Title, "https://github.com/NethServer/dev/issues/7570")
+			parentRow := EmojiOpenIssue + "   " + parent.Progress + " " + parentLink
+			if !strings.Contains(sections[tt.parentGroup], parentRow) || !strings.Contains(sections[tt.childGroup], parentRow) {
+				t.Errorf("missing parent status row in parent or child group:\n%s", output)
+			}
+			childRow := "└─" + EmojiOpenIssue + " " + child.Progress + " " + titleLink(child.Number, child.Title, "https://github.com/NethServer/dev/issues/8108")
+			for _, entry := range []struct {
+				text  string
+				group string
+			}{
+				{text: titleLink(873, "", parent.LinkedPRs[0].URL), group: tt.parentGroup},
+				{text: childRow, group: tt.childGroup},
+				{text: titleLink(949, "", child.LinkedPRs[0].URL), group: tt.childGroup},
+			} {
+				if !strings.Contains(sections[entry.group], entry.text) || strings.Count(output, entry.text) != 1 {
+					t.Errorf("expected %q exactly once in %q:\n%s", entry.text, entry.group, output)
+				}
+			}
+			if got := strings.Contains(output, "All checks passed! Ready to release."); got != tt.allReady {
+				t.Errorf("ready message shown = %t, want %t:\n%s", got, tt.allReady, output)
+			}
+		})
+	}
+}
+
+func TestDisplayGroupsChildrenWithContextualParent(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 	summary.Issues[100] = &IssueInfo{
 		Number:   100,
@@ -318,6 +475,13 @@ func TestDisplayGroupsChildrenIgnoringParentProgress(t *testing.T) {
 	}
 	if !(readyIndex < parentIndex && parentIndex < childIndex) {
 		t.Fatalf("parent and child are not shown in the ready group:\n%s", output)
+	}
+	parentLink := titleLink(100, "Unverified parent", "https://github.com/NethServer/dev/issues/100")
+	if !strings.Contains(output, EmojiOpenIssue+"   "+EmojiInProgress+" "+parentLink+"\n") {
+		t.Fatalf("parent context should preserve its status row:\n%s", output)
+	}
+	if !strings.Contains(output, "All checks passed! Ready to release.") {
+		t.Fatalf("a parent without its own PRs should not prevent release readiness:\n%s", output)
 	}
 }
 
