@@ -386,9 +386,11 @@ To be released:
 
 Release blockers:
 🟢   🚧 #133 Improve dashboard performance enhancement
-└─🟣 🚧 #142 Cache expensive aggregate queries
-        • 🟩 #100 Wire cache into report endpoint unknown
-        • 🟪 #456 Add session timeout handling mergeable
+├─🟣 🚧 #142 Cache expensive aggregate queries
+│        • 🟩 #100 Wire cache into report endpoint unknown
+│        • 🟪 #456 Add session timeout handling mergeable
+└─🟢 🔨 #143 Refresh cached summaries
+        • 🟪 #457 Refresh dashboard cache
 
 ---
 Issue status:    🟢 Open    🟣 Closed

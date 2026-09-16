@@ -729,11 +729,15 @@ func (cs *CheckSummary) displayIssueInGroup(info *IssueInfo, group issueReleaseG
 	}
 
 	cs.displayIssueHeader(info, issueMatchesGroup(info, group))
+	children := make([]*IssueInfo, 0, len(info.Children))
 	for _, childNum := range info.Children {
 		childInfo, exists := cs.Issues[childNum]
 		if exists && issueMatchesGroup(childInfo, group) {
-			cs.displayChildIssue(childInfo)
+			children = append(children, childInfo)
 		}
+	}
+	for i, childInfo := range children {
+		cs.displayChildIssue(childInfo, i == len(children)-1)
 	}
 }
 
@@ -751,7 +755,7 @@ func (cs *CheckSummary) displayIssueHeader(info *IssueInfo, showPullRequests boo
 
 	if showPullRequests {
 		for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
-			displayNestedPullRequest(pr)
+			displayNestedPullRequest(pr, "")
 		}
 	}
 }
@@ -761,27 +765,38 @@ func (cs *CheckSummary) displayIssue(info *IssueInfo) {
 	cs.displayIssueHeader(info, true)
 
 	// Display children
+	children := make([]*IssueInfo, 0, len(info.Children))
 	for _, childNum := range info.Children {
 		if childInfo, exists := cs.Issues[childNum]; exists {
-			cs.displayChildIssue(childInfo)
+			children = append(children, childInfo)
 		}
+	}
+	for i, childInfo := range children {
+		cs.displayChildIssue(childInfo, i == len(children)-1)
 	}
 }
 
 // displayChildIssue displays a child issue with proper indentation
-func (cs *CheckSummary) displayChildIssue(info *IssueInfo) {
+func (cs *CheckSummary) displayChildIssue(info *IssueInfo, last bool) {
+	connector := "├─"
+	prPrefix := "│"
+	if last {
+		connector = "└─"
+		prPrefix = ""
+	}
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
-	fmt.Printf("└─%s %s %s\n",
+	fmt.Printf("%s%s %s %s\n",
+		connector,
 		info.Status,
 		info.Progress,
 		titleLink(info.Number, info.Title, issueURL))
 
 	for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
-		displayNestedPullRequest(pr)
+		displayNestedPullRequest(pr, prPrefix)
 	}
 }
 
-func displayNestedPullRequest(info PRInfo) {
+func displayNestedPullRequest(info PRInfo, prefix string) {
 	details := make([]string, 0, 1)
 	if info.Labels != "" {
 		details = append(details, info.Labels)
@@ -792,7 +807,8 @@ func displayNestedPullRequest(info PRInfo) {
 		suffix = " " + strings.Join(details, " ")
 	}
 
-	fmt.Printf("        • %s %s%s\n",
+	fmt.Printf("%s        • %s %s%s\n",
+		prefix,
 		info.Status,
 		titleLink(info.Number, info.Title, info.URL),
 		suffix)

@@ -88,7 +88,7 @@ func TestBashAssocKeyOrderMatchesLegacyOrdering(t *testing.T) {
 	}
 }
 
-func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
+func TestDisplayFormatsIssueHierarchy(t *testing.T) {
 	summary := NewCheckSummary("NethServer/dev")
 	summary.Issues[7927] = &IssueInfo{
 		Number:   7927,
@@ -105,7 +105,7 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 		Progress: EmojiInProgress,
 		RefCount: 0,
 		Labels:   "nethvoice",
-		Children: []int{7878},
+		Children: []int{7878, 7879, 7880},
 	}
 	summary.Issues[7878] = &IssueInfo{
 		Number:       7878,
@@ -115,6 +115,29 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 		RefCount:     2,
 		Labels:       "nethvoice",
 		ParentNumber: 7310,
+		LinkedPRs: []PRInfo{
+			{Number: 10, Title: "First child PR", Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/10"},
+		},
+	}
+	summary.Issues[7879] = &IssueInfo{
+		Number:       7879,
+		Title:        "Last child in group",
+		Status:       EmojiOpenIssue,
+		Progress:     EmojiInProgress,
+		ParentNumber: 7310,
+		LinkedPRs: []PRInfo{
+			{Number: 11, Title: "Last child PR", Status: EmojiOpenPR, URL: "https://github.com/NethServer/ns8-test/pull/11"},
+		},
+	}
+	summary.Issues[7880] = &IssueInfo{
+		Number:       7880,
+		Title:        "Child in ready group",
+		Status:       EmojiOpenIssue,
+		Progress:     EmojiVerified,
+		ParentNumber: 7310,
+		LinkedPRs: []PRInfo{
+			{Number: 12, Title: "Ready child PR", Status: EmojiMergedPR, URL: "https://github.com/NethServer/ns8-test/pull/12"},
+		},
 	}
 	summary.issueOrder = []int{7310, 7927}
 
@@ -123,13 +146,19 @@ func TestDisplayUsesLegacyIssueFormatting(t *testing.T) {
 	if !strings.Contains(output, wantTop) {
 		t.Fatalf("missing top-level formatting in output:\n%s", output)
 	}
-	wantParent := "🟢   🚧 " + titleLink(7310, "Parent issue title", "https://github.com/NethServer/dev/issues/7310")
-	if !strings.Contains(output, wantParent) {
-		t.Fatalf("missing parent formatting in output:\n%s", output)
+	wantHierarchy := strings.Join([]string{
+		"🟢   🚧 " + titleLink(7310, "Parent issue title", "https://github.com/NethServer/dev/issues/7310"),
+		"├─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878"),
+		"│        • 🟩 " + titleLink(10, "First child PR", "https://github.com/NethServer/ns8-test/pull/10"),
+		"└─🟢 🚧 " + titleLink(7879, "Last child in group", "https://github.com/NethServer/dev/issues/7879"),
+		"        • 🟩 " + titleLink(11, "Last child PR", "https://github.com/NethServer/ns8-test/pull/11"),
+	}, "\n")
+	if !strings.Contains(output, wantHierarchy) {
+		t.Fatalf("missing sibling branches and PR continuation in output:\n%s", output)
 	}
-	wantChild := "└─🟢 🚧 " + titleLink(7878, "Child issue title", "https://github.com/NethServer/dev/issues/7878")
+	wantChild := "└─🟢 ✅ " + titleLink(7880, "Child in ready group", "https://github.com/NethServer/dev/issues/7880")
 	if !strings.Contains(output, wantChild) {
-		t.Fatalf("missing child formatting in output:\n%s", output)
+		t.Fatalf("a single child in another group should use the final branch:\n%s", output)
 	}
 }
 
