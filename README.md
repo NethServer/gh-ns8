@@ -415,8 +415,14 @@ PR list. Linked issues are grouped as ready to release when all their linked PRs
 are merged and the issue is verified. Verified issues with unmerged or partially
 merged linked PRs are grouped as to be released. Issues are grouped as release
 blockers when at least one linked PR is merged but the issue is not verified.
-Parent issue status is ignored for grouping; children determine the parent
-placement. Open PR rows keep the PR type column blank while preserving spacing.
+Parents with their own linked PRs are classified independently of their children,
+and their readiness is included in the final release check. Parent rows retain
+their status emojis and repeat above their children to preserve the hierarchy
+across groups. Each parent's PRs appear only in its own release group. Parents
+without their own linked PRs provide context only and do not affect release
+readiness. Progress is determined by the `testing` and `verified` issue labels,
+not GitHub project status fields.
+Open PR rows keep the PR type column blank while preserving spacing.
 If open Weblate PRs exist, the command also prints the warning before the
 summary.
 

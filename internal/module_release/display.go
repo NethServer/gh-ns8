@@ -610,7 +610,7 @@ func (cs *CheckSummary) displayIssueLegend() {
 
 func (cs *CheckSummary) allIssuesReadyToRelease() bool {
 	for _, info := range cs.Issues {
-		if len(info.Children) > 0 {
+		if len(info.Children) > 0 && len(info.LinkedPRs) == 0 {
 			continue
 		}
 		if !issueReadyToRelease(info) {
@@ -664,8 +664,9 @@ func (cs *CheckSummary) hasIssuesInGroup(group issueReleaseGroup) bool {
 }
 
 func (cs *CheckSummary) issueTreeMatchesGroup(info *IssueInfo, group issueReleaseGroup) bool {
-	if len(info.Children) == 0 {
-		return issueMatchesGroup(info, group)
+	// Parents with their own PRs must be classified independently of their children.
+	if (len(info.Children) == 0 || len(info.LinkedPRs) > 0) && issueMatchesGroup(info, group) {
+		return true
 	}
 
 	for _, childNum := range info.Children {
@@ -727,7 +728,7 @@ func (cs *CheckSummary) displayIssueInGroup(info *IssueInfo, group issueReleaseG
 		return
 	}
 
-	cs.displayIssueHeader(info)
+	cs.displayIssueHeader(info, issueMatchesGroup(info, group))
 	for _, childNum := range info.Children {
 		childInfo, exists := cs.Issues[childNum]
 		if exists && issueMatchesGroup(childInfo, group) {
@@ -736,7 +737,7 @@ func (cs *CheckSummary) displayIssueInGroup(info *IssueInfo, group issueReleaseG
 	}
 }
 
-func (cs *CheckSummary) displayIssueHeader(info *IssueInfo) {
+func (cs *CheckSummary) displayIssueHeader(info *IssueInfo, showPullRequests bool) {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%d", cs.IssuesRepo, info.Number)
 	connector := "  "
 	if len(info.Children) == 0 {
@@ -748,14 +749,16 @@ func (cs *CheckSummary) displayIssueHeader(info *IssueInfo) {
 		info.Progress,
 		titleLink(info.Number, info.Title, issueURL))
 
-	for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
-		displayNestedPullRequest(pr)
+	if showPullRequests {
+		for _, pr := range orderedPullRequestInfos(info.LinkedPRs) {
+			displayNestedPullRequest(pr)
+		}
 	}
 }
 
 // displayIssue displays a single top-level issue and its direct children.
 func (cs *CheckSummary) displayIssue(info *IssueInfo) {
-	cs.displayIssueHeader(info)
+	cs.displayIssueHeader(info, true)
 
 	// Display children
 	for _, childNum := range info.Children {
